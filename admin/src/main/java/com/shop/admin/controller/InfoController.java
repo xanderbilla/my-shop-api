@@ -5,12 +5,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/seller")
+@RequestMapping("/admin")
 public class InfoController {
 
     @GetMapping("/info")
-    public String getSellerInfo() {
-        return "Seller Service Running";
+    public String getAdminInfo() {
+        return "Admin Service Running";
     }
     
 }
