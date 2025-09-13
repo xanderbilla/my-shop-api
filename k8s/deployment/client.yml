@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client-service
+  namespace: spring-microservice
+  labels:
+    app: client-service
+    service: client
+    version: "1.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: client-service
+  template:
+    metadata:
+      labels:
+        app: client-service
+        service: client
+        version: "1.0"
+    spec:
+      containers:
+        - name: client-service
+          image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-client:latest
+          ports:
+            - containerPort: 8084
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "k8s"
+            - name: EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE
+              value: "http://service-registry.spring-microservice.svc.cluster.local:8761/eureka/"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /client/actuator/health
+              port: 8084
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /client/actuator/health
+              port: 8084
+            initialDelaySeconds: 30
+            periodSeconds: 10

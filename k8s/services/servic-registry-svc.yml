@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-registry
+  namespace: spring-microservice
+  labels:
+    app: service-registry
+    service: service-registry
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8761
+      targetPort: 8761
+      protocol: TCP
+  selector:
+    app: service-registry
+---
+# Optional: NodePort service for external access to Eureka dashboard
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-registry-external
+  namespace: spring-microservice
+  labels:
+    app: service-registry
+    service: service-registry-external
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 8761
+      targetPort: 8761
+      nodePort: 30761
+      protocol: TCP
+  selector:
+    app: service-registry
