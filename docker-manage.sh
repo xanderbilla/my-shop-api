@@ -28,36 +28,9 @@ start_services() {
     echo "1️⃣ Starting Service Registry (Eureka)..."
     docker-compose up -d service-registry
     
-    # Wait for service registry to be healthy
-    echo "⏳ Waiting for Service Registry to be ready..."
-    timeout=120
-    counter=0
-    while [ $counter -lt $timeout ]; do
-        if docker-compose ps service-registry | grep -q "healthy\|running"; then
-            echo "✅ Service Registry is ready!"
-            break
-        fi
-        sleep 2
-        counter=$((counter + 2))
-        echo "   Waiting... ($counter/$timeout seconds)"
-    done
-    
-    if [ $counter -ge $timeout ]; then
-        echo "❌ Service Registry failed to start within $timeout seconds"
-        return 1
-    fi
-    
-    # Wait an additional 10 seconds for Eureka to fully initialize
-    echo "⏳ Allowing additional time for Eureka initialization..."
-    sleep 10
-    
     # Start API Gateway
     echo "2️⃣ Starting API Gateway..."
     docker-compose up -d api-gateway
-    
-    # Wait for API Gateway
-    echo "⏳ Waiting for API Gateway..."
-    sleep 15
     
     # Start remaining services
     echo "3️⃣ Starting remaining services..."
