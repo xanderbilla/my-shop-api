@@ -1,0 +1,71 @@
+services:
+  # Service Registry (Eureka Server) - Start first
+  service-registry:
+    image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-service-registry:latest
+    container_name: service-registry
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+  # API Gateway - Start after service registry
+  api-gateway:
+    image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-api-gateway:latest
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://service-registry:8761/eureka/
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+  # Auth Service
+  auth-service:
+    image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-auth:latest
+    container_name: auth-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://service-registry:8761/eureka/
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+  # Admin Service
+  admin-service:
+    image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-admin:latest
+    container_name: admin-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://service-registry:8761/eureka/
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+  # Client Service
+  client-service:
+    image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-client:latest
+    container_name: client-service
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://service-registry:8761/eureka/
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  eureka-data:
