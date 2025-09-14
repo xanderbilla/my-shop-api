@@ -22,6 +22,7 @@ spec:
       containers:
         - name: api-gateway
           image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-api-gateway:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           env:

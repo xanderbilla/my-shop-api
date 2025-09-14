@@ -22,6 +22,7 @@ spec:
       containers:
         - name: auth-service
           image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-auth:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8082
           env:

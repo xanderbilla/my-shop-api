@@ -33,8 +33,6 @@ spring:
 
 server:
   port: 8080
-  servlet:
-    context-path: /api/v1/api-gateway
 
 # Management endpoints configuration (Production-ready)
 management:

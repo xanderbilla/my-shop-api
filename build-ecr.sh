@@ -11,6 +11,8 @@ PLATFORMS="linux/amd64,linux/arm64"
 # Services and their exact ECR repository names (from your ECR output)
 SERVICES="service-registry:spring-microservice/shop-service-registry api-gateway:spring-microservice/shop-api-gateway auth:spring-microservice/shop-auth admin:spring-microservice/shop-admin client:spring-microservice/shop-client"
 
+docker context use default
+
 echo "🔑 Authenticating with ECR..."
 aws ecr-public get-login-password --region ${AWS_REGION} | \
     docker login --username AWS --password-stdin public.ecr.aws

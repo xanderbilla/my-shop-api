@@ -22,6 +22,7 @@ spec:
       containers:
         - name: client-service
           image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-client:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8084
           env:
