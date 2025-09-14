@@ -11,9 +11,26 @@ SERVICE_PORTS=(8761 8080 8082 8083 8084)
 # Maven PID tracking (using temporary files in /tmp that get cleaned up)
 MAVEN_PID_DIR="/tmp/spring-microservice-$$"
 
+# CloudFormation Configuration
+CF_TEMPLATE_PATH="./cloudformation/cognito-template.yaml"
+DEFAULT_STACK_NAME="spring-microservice-cognito"
+DEFAULT_PROJECT_NAME="spring-microservice"
+DEFAULT_ENVIRONMENT="dev"
+
 # Cleanup function to remove temporary files
 cleanup() {
     rm -rf "$MAVEN_PID_DIR" 2>/dev/null || true
+}
+
+# Function to clear Maven log files
+clear_logs() {
+    echo "🧹 Clearing Maven log files..."
+    if [ -d "logs" ]; then
+        rm -f logs/*.log
+        echo "✅ Log files cleared"
+    else
+        echo "✅ No log directory found - nothing to clear"
+    fi
 }
 
 # Set trap to cleanup on script exit
@@ -63,18 +80,36 @@ start_maven_service() {
     
     # Change to service directory and start Maven
     cd $service
-    nohup mvn spring-boot:run > /dev/null 2>&1 &
+    
+    # Set environment variables for auth service
+    if [ "$service" = "auth" ]; then
+        echo "🔧 Setting Cognito environment variables for auth service..."
+        export AWS_COGNITO_REGION=${AWS_COGNITO_REGION:-us-east-1}
+        export AWS_COGNITO_USER_POOL_ID=${AWS_COGNITO_USER_POOL_ID:-}
+        export AWS_COGNITO_CLIENT_ID=${AWS_COGNITO_CLIENT_ID:-}
+        export AWS_COGNITO_CLIENT_SECRET=${AWS_COGNITO_CLIENT_SECRET:-}
+    fi
+    
+    # Create logs directory if it doesn't exist
+    mkdir -p logs
+    
+    # Start Maven with proper logging
+    nohup mvn spring-boot:run > "../logs/$service.log" 2>&1 &
     local pid=$!
     echo "$pid" > "$MAVEN_PID_DIR/$service.pid"
     cd ..
     
     echo "✅ $service started with PID $pid"
+    echo "📋 Logs: logs/$service.log"
     return 0
 }
 
 # Function to start all services with Maven
 start_services_maven() {
     echo "🚀 Starting all microservices with Maven..."
+    
+    # Create logs directory if it doesn't exist
+    mkdir -p logs
     
     # Clear previous PID tracking
     rm -rf "$MAVEN_PID_DIR"
@@ -155,21 +190,6 @@ restart_maven_service() {
     
     echo "🔄 Restarting $service with Maven..."
     
-    # Stop the specific service if it's tracked
-    local pid_file="$MAVEN_PID_DIR/$service.pid"
-    if [ -f "$pid_file" ]; then
-        local pid=$(cat "$pid_file")
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            echo "🛑 Stopping $service (PID: $pid)..."
-            kill -TERM "$pid"
-            sleep 5
-            if kill -0 "$pid" 2>/dev/null; then
-                kill -KILL "$pid"
-            fi
-        fi
-        rm -f "$pid_file"
-    fi
-    
     # Find service port
     local port=""
     for i in "${!SERVICES[@]}"; do
@@ -178,6 +198,27 @@ restart_maven_service() {
             break
         fi
     done
+    
+    # Stop any process using the service port
+    if check_port $port; then
+        echo "🛑 Stopping service on port $port..."
+        local existing_pid=$(lsof -ti :$port)
+        if [ -n "$existing_pid" ]; then
+            kill -TERM $existing_pid
+            sleep 3
+            if kill -0 $existing_pid 2>/dev/null; then
+                kill -KILL $existing_pid
+            fi
+            echo "✅ Stopped process with PID: $existing_pid"
+        fi
+    fi
+    
+    # Remove PID file if it exists
+    local pid_file="$MAVEN_PID_DIR/$service.pid"
+    [ -f "$pid_file" ] && rm -f "$pid_file"
+    
+    # Wait a bit for port to be released
+    sleep 2
     
     # Restart the service
     start_maven_service $service $port
@@ -189,6 +230,371 @@ restart_all_maven_services() {
     stop_maven_services
     sleep 5
     start_services_maven
+}
+
+# Function to deploy Cognito stack
+deploy_cognito() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    local project_name="${2:-$DEFAULT_PROJECT_NAME}"
+    local environment="${3:-$DEFAULT_ENVIRONMENT}"
+    
+    echo "🚀 Deploying Cognito stack..."
+    echo "Stack Name: $stack_name"
+    echo "Project Name: $project_name"
+    echo "Environment: $environment"
+    
+    if [ ! -f "$CF_TEMPLATE_PATH" ]; then
+        echo "❌ CloudFormation template not found at: $CF_TEMPLATE_PATH"
+        return 1
+    fi
+    
+    local start_time=$(date +%s)
+    
+    aws cloudformation deploy \
+        --template-file "$CF_TEMPLATE_PATH" \
+        --stack-name "$stack_name" \
+        --parameter-overrides \
+            ProjectName="$project_name" \
+            Environment="$environment" \
+        --capabilities CAPABILITY_IAM \
+        --no-fail-on-empty-changeset
+    
+    if [ $? -eq 0 ]; then
+        local end_time=$(date +%s)
+        local duration=$((end_time - start_time))
+        echo "✅ Cognito stack deployed successfully!"
+        echo "⏱️  Deployment took ${duration} seconds"
+        show_cognito_info "$stack_name" "$project_name" "$environment"
+    else
+        echo "❌ Failed to deploy Cognito stack"
+        return 1
+    fi
+}
+
+# Function to show Cognito information
+show_cognito_info() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    local project_name="${2:-$DEFAULT_PROJECT_NAME}"
+    local environment="${3:-$DEFAULT_ENVIRONMENT}"
+    
+    echo "📋 Retrieving Cognito information..."
+    
+    # Get stack outputs
+    local user_pool_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    local client_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    local region=$(aws configure get region 2>/dev/null || echo "us-east-1")
+    
+    if [ -z "$user_pool_id" ] || [ -z "$client_id" ]; then
+        echo "❌ Could not retrieve Cognito information. Stack may not exist or be ready."
+        return 1
+    fi
+    
+    # Get client secret
+    local client_secret=$(aws cognito-idp describe-user-pool-client \
+        --user-pool-id "$user_pool_id" \
+        --client-id "$client_id" \
+        --query 'UserPoolClient.ClientSecret' \
+        --output text 2>/dev/null)
+    
+    echo ""
+    echo "🎯 Cognito Configuration:"
+    echo "======================================"
+    echo "Stack Name: $stack_name"
+    echo "Project: $project_name"
+    echo "Environment: $environment"
+    echo "Region: $region"
+    echo "User Pool ID: $user_pool_id"
+    echo "Client ID: $client_id"
+    echo "Client Secret: $client_secret"
+    echo "======================================"
+    echo ""
+    echo "🔧 Environment Variables (copy and paste):"
+    echo "export AWS_COGNITO_REGION=$region"
+    echo "export AWS_COGNITO_USER_POOL_ID=$user_pool_id"
+    echo "export AWS_COGNITO_CLIENT_ID=$client_id"
+    echo "export AWS_COGNITO_CLIENT_SECRET=$client_secret"
+    echo ""
+    echo "Or run: ./local-run.sh set-cognito-env $stack_name"
+}
+
+# Function to set Cognito environment variables
+set_cognito_env() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    
+    echo "🔧 Setting Cognito environment variables..."
+    
+    # Get stack outputs
+    local user_pool_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    local client_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    local region=$(aws configure get region 2>/dev/null || echo "us-east-1")
+    
+    if [ -z "$user_pool_id" ] || [ -z "$client_id" ]; then
+        echo "❌ Could not retrieve Cognito information. Stack may not exist or be ready."
+        return 1
+    fi
+    
+    # Get client secret
+    local client_secret=$(aws cognito-idp describe-user-pool-client \
+        --user-pool-id "$user_pool_id" \
+        --client-id "$client_id" \
+        --query 'UserPoolClient.ClientSecret' \
+        --output text 2>/dev/null)
+    
+    # Export environment variables
+    export AWS_COGNITO_REGION="$region"
+    export AWS_COGNITO_USER_POOL_ID="$user_pool_id"
+    export AWS_COGNITO_CLIENT_ID="$client_id"
+    export AWS_COGNITO_CLIENT_SECRET="$client_secret"
+    
+    echo "✅ Environment variables set!"
+    echo "Region: $AWS_COGNITO_REGION"
+    echo "User Pool ID: $AWS_COGNITO_USER_POOL_ID"
+    echo "Client ID: $AWS_COGNITO_CLIENT_ID"
+    echo "Client Secret: [REDACTED]"
+    echo ""
+    echo "Note: These variables are only set for the current shell session."
+    echo "Add them to your ~/.zshrc or ~/.bashrc for persistence."
+}
+
+# Function to check Cognito stack status
+cognito_status() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    
+    echo "📊 Checking Cognito stack status..."
+    
+    local status=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].StackStatus' \
+        --output text 2>/dev/null)
+    
+    if [ $? -eq 0 ]; then
+        echo "Stack Name: $stack_name"
+        echo "Status: $status"
+        
+        if [ "$status" = "CREATE_COMPLETE" ] || [ "$status" = "UPDATE_COMPLETE" ]; then
+            echo "✅ Stack is ready"
+            show_cognito_info "$stack_name"
+        else
+            echo "⏳ Stack is not ready yet"
+        fi
+    else
+        echo "❌ Stack not found or error retrieving status"
+        return 1
+    fi
+}
+
+# Function to start services with proper sequence (Docker)
+
+# Function to deploy Cognito stack
+deploy_cognito() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    local project_name="${2:-$DEFAULT_PROJECT_NAME}"
+    local environment="${3:-$DEFAULT_ENVIRONMENT}"
+    
+    echo "🚀 Deploying Cognito stack..."
+    echo "Stack Name: $stack_name"
+    echo "Project Name: $project_name"
+    echo "Environment: $environment"
+    
+    if [ ! -f "$CF_TEMPLATE_PATH" ]; then
+        echo "❌ CloudFormation template not found at: $CF_TEMPLATE_PATH"
+        return 1
+    fi
+    
+    # Check if AWS CLI is installed
+    if ! command -v aws &> /dev/null; then
+        echo "❌ AWS CLI is not installed. Please install it first."
+        return 1
+    fi
+    
+    # Deploy the stack
+    echo "📡 Deploying CloudFormation stack..."
+    aws cloudformation deploy \
+        --template-file "$CF_TEMPLATE_PATH" \
+        --stack-name "$stack_name" \
+        --parameter-overrides \
+            ProjectName="$project_name" \
+            Environment="$environment" \
+        --capabilities CAPABILITY_IAM \
+        --no-fail-on-empty-changeset
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Cognito stack deployed successfully!"
+        echo ""
+        show_cognito_info "$stack_name" "$project_name" "$environment"
+    else
+        echo "❌ Failed to deploy Cognito stack"
+        return 1
+    fi
+}
+
+# Function to show Cognito information
+show_cognito_info() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    local project_name="${2:-$DEFAULT_PROJECT_NAME}"
+    local environment="${3:-$DEFAULT_ENVIRONMENT}"
+    
+    echo "📋 Retrieving Cognito information..."
+    
+    # Get stack outputs
+    local user_pool_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    local client_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    local region=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`Region`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    if [ -z "$user_pool_id" ] || [ -z "$client_id" ] || [ -z "$region" ]; then
+        echo "❌ Failed to retrieve stack outputs. Stack might not be deployed yet."
+        return 1
+    fi
+    
+    # Get client secret
+    local client_secret=$(aws cognito-idp describe-user-pool-client \
+        --user-pool-id "$user_pool_id" \
+        --client-id "$client_id" \
+        --query 'UserPoolClient.ClientSecret' \
+        --output text 2>/dev/null)
+    
+    echo ""
+    echo "🎯 Cognito Configuration:"
+    echo "=========================="
+    echo "User Pool ID: $user_pool_id"
+    echo "Client ID: $client_id"
+    echo "Client Secret: $client_secret"
+    echo "Region: $region"
+    echo ""
+    echo "� Environment Variables:"
+    echo "=========================="
+    echo "export AWS_COGNITO_REGION=$region"
+    echo "export AWS_COGNITO_USER_POOL_ID=$user_pool_id"
+    echo "export AWS_COGNITO_CLIENT_ID=$client_id"
+    echo "export AWS_COGNITO_CLIENT_SECRET=$client_secret"
+    echo ""
+    echo "💡 To use these values, run:"
+    echo "./local-run.sh set-cognito-env $stack_name"
+}
+
+# Function to set Cognito environment variables
+set_cognito_env() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    
+    echo "🔧 Setting Cognito environment variables..."
+    
+    # Get stack outputs
+    local user_pool_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    local client_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    local region=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`Region`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    if [ -z "$user_pool_id" ] || [ -z "$client_id" ] || [ -z "$region" ]; then
+        echo "❌ Failed to retrieve stack outputs. Stack might not be deployed yet."
+        return 1
+    fi
+    
+    # Get client secret
+    local client_secret=$(aws cognito-idp describe-user-pool-client \
+        --user-pool-id "$user_pool_id" \
+        --client-id "$client_id" \
+        --query 'UserPoolClient.ClientSecret' \
+        --output text 2>/dev/null)
+    
+    # Export environment variables
+    export AWS_COGNITO_REGION="$region"
+    export AWS_COGNITO_USER_POOL_ID="$user_pool_id"
+    export AWS_COGNITO_CLIENT_ID="$client_id"
+    export AWS_COGNITO_CLIENT_SECRET="$client_secret"
+    
+    echo "✅ Environment variables set:"
+    echo "AWS_COGNITO_REGION=$AWS_COGNITO_REGION"
+    echo "AWS_COGNITO_USER_POOL_ID=$AWS_COGNITO_USER_POOL_ID"
+    echo "AWS_COGNITO_CLIENT_ID=$AWS_COGNITO_CLIENT_ID"
+    echo "AWS_COGNITO_CLIENT_SECRET=***hidden***"
+}
+
+# Function to delete Cognito stack
+delete_cognito() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    
+    echo "🗑️  Deleting Cognito stack: $stack_name"
+    echo "⚠️  This action cannot be undone!"
+    
+    read -p "Are you sure you want to delete the stack? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "🚀 Deleting CloudFormation stack..."
+        aws cloudformation delete-stack --stack-name "$stack_name"
+        
+        if [ $? -eq 0 ]; then
+            echo "✅ Stack deletion initiated. Check AWS Console for progress."
+        else
+            echo "❌ Failed to initiate stack deletion"
+            return 1
+        fi
+    else
+        echo "❌ Stack deletion cancelled"
+    fi
+}
+
+# Function to check Cognito stack status
+cognito_status() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    
+    echo "📊 Checking Cognito stack status..."
+    
+    local status=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].StackStatus' \
+        --output text 2>/dev/null)
+    
+    if [ $? -eq 0 ]; then
+        echo "Stack Name: $stack_name"
+        echo "Status: $status"
+        
+        if [ "$status" = "CREATE_COMPLETE" ] || [ "$status" = "UPDATE_COMPLETE" ]; then
+            echo "✅ Stack is ready"
+            show_cognito_info "$stack_name"
+        else
+            echo "⏳ Stack is not ready yet"
+        fi
+    else
+        echo "❌ Stack not found or error retrieving status"
+        return 1
+    fi
 }
 
 # Function to start services with proper sequence (Docker)
@@ -302,12 +708,29 @@ show_logs() {
     local mode=$2
     
     if [ "$mode" = "maven" ]; then
-        echo "📋 Maven logs are not stored to files to avoid creating additional files."
-        echo "💡 To see Maven logs, you can:"
-        echo "   1. Check the terminal where you started the services"
-        echo "   2. Use 'ps aux | grep spring-boot' to see running processes"
-        echo "   3. Use system logs: 'sudo dmesg | grep java'"
-        echo "   4. Or restart services without background mode for live logs"
+        if [ -z "$service" ]; then
+            echo "📋 Showing Maven logs for all services..."
+            echo "Available log files:"
+            ls -la logs/*.log 2>/dev/null || echo "No log files found. Make sure services are running."
+            echo ""
+            echo "To view logs for a specific service, use: $0 logs maven [service-name]"
+            echo "Available services: ${SERVICES[*]}"
+        else
+            local log_file="logs/$service.log"
+            if [ -f "$log_file" ]; then
+                echo "📋 Showing Maven logs for $service (live tail)..."
+                echo "Press Ctrl+C to stop following logs"
+                echo "----------------------------------------"
+                tail -f "$log_file"
+            else
+                echo "❌ Log file not found: $log_file"
+                echo "Available log files:"
+                ls -la logs/*.log 2>/dev/null || echo "No log files found."
+                echo ""
+                echo "Available services: ${SERVICES[*]}"
+                echo "Make sure the service is running with Maven."
+            fi
+        fi
     else
         # Docker logs
         if [ -z "$service" ]; then
@@ -329,6 +752,89 @@ restart_docker_service() {
     fi
     echo "🔄 Restarting Docker service $1..."
     docker-compose restart $1
+}
+
+# Function to clear all users from Cognito User Pool
+clear_cognito_users() {
+    local stack_name="${1:-$DEFAULT_STACK_NAME}"
+    
+    echo "🧹 Clearing all users from Cognito User Pool..."
+    
+    # Get User Pool ID from CloudFormation stack
+    local user_pool_id=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+        --output text 2>/dev/null)
+    
+    if [ -z "$user_pool_id" ] || [ "$user_pool_id" = "None" ]; then
+        echo "❌ Could not retrieve User Pool ID from stack: $stack_name"
+        echo "Make sure the Cognito stack is deployed and accessible."
+        return 1
+    fi
+    
+    echo "User Pool ID: $user_pool_id"
+    
+    # Get list of all users
+    echo "📋 Fetching list of users..."
+    local users=$(aws cognito-idp list-users \
+        --user-pool-id "$user_pool_id" \
+        --query 'Users[].Username' \
+        --output text 2>/dev/null)
+    
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to fetch users from User Pool"
+        return 1
+    fi
+    
+    if [ -z "$users" ] || [ "$users" = "None" ]; then
+        echo "✅ No users found in User Pool - already clean!"
+        return 0
+    fi
+    
+    # Convert users string to array
+    local user_array=($users)
+    local user_count=${#user_array[@]}
+    
+    echo "Found $user_count users to delete:"
+    for username in "${user_array[@]}"; do
+        echo "  - $username"
+    done
+    
+    echo ""
+    read -p "Are you sure you want to delete ALL $user_count users? (y/N): " confirm
+    
+    if [[ $confirm =~ ^[Yy]$ ]]; then
+        echo "🗑️  Deleting users..."
+        local deleted=0
+        local failed=0
+        
+        for username in "${user_array[@]}"; do
+            echo -n "Deleting user: $username ... "
+            if aws cognito-idp admin-delete-user \
+                --user-pool-id "$user_pool_id" \
+                --username "$username" >/dev/null 2>&1; then
+                echo "✅ deleted"
+                ((deleted++))
+            else
+                echo "❌ failed"
+                ((failed++))
+            fi
+        done
+        
+        echo ""
+        echo "📊 Summary:"
+        echo "  ✅ Successfully deleted: $deleted users"
+        echo "  ❌ Failed to delete: $failed users"
+        
+        if [ $failed -eq 0 ]; then
+            echo "🎉 All users cleared successfully!"
+        else
+            echo "⚠️  Some users could not be deleted. Check AWS console for details."
+        fi
+    else
+        echo "❌ Operation cancelled by user"
+        return 1
+    fi
 }
 
 # Main script logic
@@ -400,6 +906,29 @@ case "$1" in
         sleep 10
         check_status
         ;;
+    "deploy-cognito")
+        shift # Remove the command from arguments
+        deploy_cognito "$@"
+        ;;
+    "cognito-info")
+        shift
+        show_cognito_info "$@"
+        ;;
+    "set-cognito-env")
+        shift
+        set_cognito_env "$@"
+        ;;
+    "cognito-status")
+        shift
+        cognito_status "$@"
+        ;;
+    "clear-users")
+        shift
+        clear_cognito_users "$@"
+        ;;
+    "clear-logs")
+        clear_logs
+        ;;
     *)
         echo "� Spring Microservices Management Script"
         echo ""
@@ -424,11 +953,20 @@ case "$1" in
         echo "  status            - Check status of all services"
         echo "  logs [service]    - Show Docker logs (optional: specify service)"
         echo "  logs maven [service] - Show Maven logs (optional: specify service)"
+        echo "  clear-logs        - Clear all Maven log files"
         echo ""
         echo "🔄 Restart Commands:"
         echo "  restart docker [service]    - Restart Docker service"
         echo "  restart maven [service]     - Restart Maven service"
         echo "  restart maven all           - Restart all Maven services"
+        echo ""
+        echo "☁️ AWS Cognito Commands:"
+        echo "  deploy-cognito [stack-name] [project-name] [environment]"
+        echo "                        - Deploy Cognito User Pool via CloudFormation"
+        echo "  cognito-info [stack-name] - Show Cognito configuration and env vars"
+        echo "  set-cognito-env [stack-name] - Set Cognito environment variables"
+        echo "  cognito-status [stack-name] - Check Cognito stack status"
+        echo "  clear-users [stack-name] - Clear all users from Cognito User Pool"
         echo ""
         echo "Available services: ${SERVICES[*]}"
         echo ""
@@ -444,6 +982,17 @@ case "$1" in
         echo "  $0 restart maven all     # Restart all Maven services"
         echo "  $0 logs maven auth       # Show Maven logs for auth service"
         echo "  $0 stop                  # Stop everything"
+        echo ""
+        echo "  # Cognito Examples:"
+        echo "  $0 deploy-cognito        # Deploy with default settings"
+        echo "  $0 cognito-info          # Show Cognito configuration"
+        echo "  $0 set-cognito-env       # Set environment variables"
+        echo ""
+        echo "📋 Default Cognito Settings:"
+        echo "  Stack Name: $DEFAULT_STACK_NAME"
+        echo "  Project Name: $DEFAULT_PROJECT_NAME"
+        echo "  Environment: $DEFAULT_ENVIRONMENT"
+        echo "  Template: $CF_TEMPLATE_PATH"
         exit 1
         ;;
 esac

@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Spring Microservice Auth Service - AWS Cognito User Pool Infrastructure'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  ServiceName:
+    Type: String
+    Default: spring-microservice-auth
+    Description: Name of the service
+  
+  UserPoolName:
+    Type: String
+    Default: spring-microservice-users
+    Description: Name for the Cognito User Pool
+
+Resources:
+  # Cognito User Pool
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ServiceName}-${Environment}-user-pool'
+      AliasAttributes:
+        - email
+        - preferred_username
+      AutoVerifiedAttributes:
+        - email
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      EmailVerificationSubject: !Sub '${ServiceName} - Verify your email'
+      EmailVerificationMessage: 'Your verification code is {####}'
+      MfaConfiguration: 'OFF'
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: role
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      UserPoolTags:
+        Environment: !Ref Environment
+        Service: !Ref ServiceName
+        Name: !Sub '${ServiceName}-${Environment}-user-pool'
+
+  # Cognito User Pool Client
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${ServiceName}-${Environment}-client'
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: true
+      ExplicitAuthFlows:
+        - ADMIN_NO_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      SupportedIdentityProviders:
+        - COGNITO
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      AccessTokenValidity: 24
+      IdTokenValidity: 24
+      RefreshTokenValidity: 30
+      EnableTokenRevocation: true
+      AllowedOAuthFlows:
+        - implicit
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      CallbackURLs:
+        - http://localhost:3000/callback
+        - http://localhost:8080/callback
+      LogoutURLs:
+        - http://localhost:3000/logout
+        - http://localhost:8080/logout
+      AllowedOAuthFlowsUserPoolClient: true
+
+  # Cognito User Pool Domain
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub '${ServiceName}-${Environment}-${AWS::AccountId}'
+      UserPoolId: !Ref CognitoUserPool
+
+  # IAM Role for accessing Cognito from the application
+  CognitoAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ServiceName}-${Environment}-cognito-access-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CognitoAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminCreateUser
+                  - cognito-idp:AdminSetUserPassword
+                  - cognito-idp:AdminInitiateAuth
+                  - cognito-idp:AdminGetUser
+                  - cognito-idp:AdminUpdateUserAttributes
+                  - cognito-idp:AdminDeleteUser
+                  - cognito-idp:ListUsers
+                  - cognito-idp:ConfirmSignUp
+                  - cognito-idp:ResendConfirmationCode
+                  - cognito-idp:ForgotPassword
+                  - cognito-idp:ConfirmForgotPassword
+                Resource: !Sub '${CognitoUserPool}/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: !Ref ServiceName
+
+  # Instance Profile for EC2 instances
+  CognitoAccessInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref CognitoAccessRole
+
+Outputs:
+  UserPoolId:
+    Description: 'Cognito User Pool ID'
+    Value: !Ref CognitoUserPool
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-UserPoolId'
+
+  UserPoolClientId:
+    Description: 'Cognito User Pool Client ID'
+    Value: !Ref CognitoUserPoolClient
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-UserPoolClientId'
+
+  UserPoolClientSecret:
+    Description: 'Cognito User Pool Client Secret'
+    Value: !GetAtt CognitoUserPoolClient.ClientSecret
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-UserPoolClientSecret'
+
+  UserPoolDomain:
+    Description: 'Cognito User Pool Domain'
+    Value: !Sub 'https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-UserPoolDomain'
+
+  CognitoAccessRoleArn:
+    Description: 'IAM Role ARN for Cognito Access'
+    Value: !GetAtt CognitoAccessRole.Arn
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-CognitoAccessRoleArn'
+
+  Region:
+    Description: 'AWS Region'
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-Region'
+
+  # Environment variables for the application
+  EnvironmentVariables:
+    Description: 'Environment variables to set in your application'
+    Value: !Sub |
+      AWS_COGNITO_REGION=${AWS::Region}
+      AWS_COGNITO_USER_POOL_ID=${CognitoUserPool}
+      AWS_COGNITO_CLIENT_ID=${CognitoUserPoolClient}
+      AWS_COGNITO_CLIENT_SECRET=${CognitoUserPoolClient.ClientSecret}
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-EnvVars'
