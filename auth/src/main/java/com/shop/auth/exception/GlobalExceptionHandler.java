@@ -44,7 +44,7 @@ public class GlobalExceptionHandler {
         log.warn("JSON parsing error: {}", ex.getMessage());
 
         String errorMessage = "Invalid request format";
-        
+
         // Check if this is a role enum parsing error
         if (ex.getMessage() != null && ex.getMessage().contains("UserRole")) {
             errorMessage = "Invalid role specified. Valid roles are: USER, ADMIN, SUPPORT";

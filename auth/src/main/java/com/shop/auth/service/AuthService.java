@@ -234,7 +234,7 @@ public class AuthService {
                     }
                 }
             }
-            
+
             // If no valid roles were found, default to USER
             if (roles.isEmpty()) {
                 roles.add(UserRole.USER);

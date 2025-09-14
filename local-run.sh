@@ -119,22 +119,71 @@ deploy_stack() {
     
     log_header "Deploying CloudFormation stack: $full_stack_name"
     
-    aws cloudformation deploy \
-        --template-file "$CF_TEMPLATE_PATH" \
+    # Check if stack already exists
+    local existing_stack=$(aws cloudformation describe-stacks \
         --stack-name "$full_stack_name" \
-        --parameter-overrides \
-            Environment="dev" \
-            ServiceName="$PROJECT_NAME" \
-            UserPoolName="${stack_name}-users" \
-        --capabilities CAPABILITY_IAM \
-        --no-fail-on-empty-changeset
+        --query 'Stacks[0].StackName' \
+        --output text 2>/dev/null)
     
-    if [ $? -eq 0 ]; then
-        log_success "Stack deployed successfully: $full_stack_name"
+    if [ $? -eq 0 ] && [ -n "$existing_stack" ]; then
+        log_info "Stack '$full_stack_name' already exists, updating..."
+    else
+        log_info "Creating new stack '$full_stack_name'..."
+    fi
+    
+    # Start deployment
+    log_info "Initiating CloudFormation deployment..."
+    
+    # Create a temporary file to capture deployment output
+    local temp_file=$(mktemp)
+    
+    # Start deployment in background
+    (
+        aws cloudformation deploy \
+            --template-file "$CF_TEMPLATE_PATH" \
+            --stack-name "$full_stack_name" \
+            --parameter-overrides \
+                Environment="dev" \
+                ServiceName="$PROJECT_NAME" \
+                UserPoolName="${stack_name}-users" \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset > "$temp_file" 2>&1
+        echo $? > "${temp_file}.exit_code"
+    ) &
+    
+    local deploy_pid=$!
+    
+    # Give deployment a moment to start
+    sleep 3
+    
+    # Start monitoring deployment progress with real-time events
+    log_info "Starting real-time CloudFormation event monitoring..."
+    monitor_stack_events "$full_stack_name" "deployment"
+    local monitor_result=$?
+    
+    # Wait for deployment to complete
+    wait $deploy_pid
+    local deploy_exit_code=$(cat "${temp_file}.exit_code" 2>/dev/null || echo "1")
+    
+    # Show deployment output if there were any messages
+    if [ -s "$temp_file" ]; then
+        echo ""
+        log_info "Deployment output:"
+        cat "$temp_file"
+    fi
+    
+    # Cleanup temporary files
+    rm -f "$temp_file" "${temp_file}.exit_code"
+    
+    # Check final result
+    if [ $deploy_exit_code -eq 0 ] && [ $monitor_result -eq 0 ]; then
+        echo ""
+        log_success "✅ Stack deployed successfully: $full_stack_name"
         echo $full_stack_name
         return 0
     else
-        log_error "Failed to deploy stack"
+        echo ""
+        log_error "❌ Failed to deploy stack"
         return 1
     fi
 }
@@ -459,6 +508,87 @@ clear_env_vars() {
     log_success "Environment variables cleared"
 }
 
+# Function to monitor CloudFormation stack events
+monitor_stack_events() {
+    local stack_name=$1
+    local operation=$2
+    local last_event_time=""
+    
+    log_info "Monitoring CloudFormation events for $operation..."
+    echo ""
+    
+    while true; do
+        # Check stack status
+        local stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$stack_name" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null)
+        
+        if [ $? -ne 0 ]; then
+            # Stack no longer exists (successful deletion) or error
+            if [ "$operation" = "deletion" ]; then
+                log_success "Stack successfully deleted!"
+                break
+            else
+                log_error "Error monitoring stack or stack not found"
+                break
+            fi
+        fi
+        
+        # Get recent events
+        local events=$(aws cloudformation describe-stack-events \
+            --stack-name "$stack_name" \
+            --query 'StackEvents[?Timestamp>`2025-09-01T00:00:00.000Z`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
+            --output table 2>/dev/null)
+        
+        if [ $? -eq 0 ]; then
+            # Get the latest event timestamp
+            local latest_event=$(aws cloudformation describe-stack-events \
+                --stack-name "$stack_name" \
+                --query 'StackEvents[0].Timestamp' \
+                --output text 2>/dev/null)
+            
+            # Only show new events
+            if [ "$latest_event" != "$last_event_time" ]; then
+                clear
+                echo -e "${PURPLE}🔄 CloudFormation Stack $operation Progress${NC}"
+                echo "Stack: $stack_name"
+                echo "Status: $stack_status"
+                echo ""
+                echo "Recent Events:"
+                echo "$events"
+                last_event_time="$latest_event"
+            fi
+        fi
+        
+        # Check if operation is complete
+        case "$stack_status" in
+            "DELETE_COMPLETE")
+                log_success "Stack deletion completed successfully!"
+                return 0
+                ;;
+            "DELETE_FAILED")
+                log_error "Stack deletion failed!"
+                return 1
+                ;;
+            "CREATE_COMPLETE"|"UPDATE_COMPLETE")
+                if [ "$operation" = "deployment" ]; then
+                    log_success "Stack deployment completed successfully!"
+                    return 0
+                fi
+                ;;
+            "CREATE_FAILED"|"UPDATE_FAILED"|"ROLLBACK_COMPLETE"|"ROLLBACK_FAILED")
+                if [ "$operation" = "deployment" ]; then
+                    log_error "Stack deployment failed!"
+                    return 1
+                fi
+                ;;
+        esac
+        
+        sleep 5
+    done
+}
+
 # Function to delete stack
 delete_stack() {
     local stack_name=$1
@@ -466,14 +596,36 @@ delete_stack() {
     log_header "Deleting CloudFormation stack: $stack_name"
     log_warning "This action cannot be undone!"
     
+    # First check if stack exists
+    local stack_exists=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --query 'Stacks[0].StackName' \
+        --output text 2>/dev/null)
+    
+    if [ $? -ne 0 ] || [ -z "$stack_exists" ]; then
+        log_warning "Stack '$stack_name' does not exist or is not accessible"
+        return 1
+    fi
+    
+    log_info "Found stack: $stack_exists"
+    echo
     read -p "Are you sure you want to delete the stack? (y/N): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Initiating stack deletion..."
         aws cloudformation delete-stack --stack-name "$stack_name"
+        
         if [ $? -eq 0 ]; then
-            log_success "Stack deletion initiated"
+            log_success "Stack deletion initiated successfully"
+            echo ""
+            log_info "Monitoring deletion progress (Press Ctrl+C to stop monitoring)..."
+            sleep 3
+            
+            # Monitor the deletion progress
+            monitor_stack_events "$stack_name" "deletion"
+            
         else
-            log_error "Failed to delete stack"
+            log_error "Failed to initiate stack deletion"
             return 1
         fi
     else
@@ -549,9 +701,10 @@ show_help() {
 # Main script logic
 case "$1" in
     "run")
-        log_header "Starting full deployment and service startup..."
+        log_header "🚀 Starting full deployment and service startup..."
         
         # Compile CloudFormation template
+        log_info "📋 Compiling CloudFormation template..."
         compile_cf_template || exit 1
         
         # Ask for stack name
@@ -559,53 +712,73 @@ case "$1" in
         account_id=$(get_account_id)
         full_stack_name="${stack_name}-${account_id}-auth"
         
-        # Deploy stack
+        # Deploy stack with enhanced monitoring
+        log_info "☁️  Deploying AWS Cognito infrastructure..."
         deployed_stack=$(deploy_stack $stack_name)
         if [ $? -ne 0 ]; then
+            log_error "Infrastructure deployment failed. Aborting service startup."
             exit 1
         fi
         
         # Export environment config
+        log_info "⚙️  Configuring environment variables..."
         export_env_config $deployed_stack || exit 1
         
         # Check and kill busy ports
+        log_info "🔍 Checking for port conflicts..."
         check_and_kill_busy_ports
         
         # Clean compile all services
+        log_info "🔨 Building all microservices..."
         clean_compile_services || exit 1
         
         # Start all services in order
+        log_info "🎯 Starting all services..."
         start_all_services
         
         # Test health endpoints
+        log_info "🏥 Waiting for services to initialize..."
         sleep 10
+        log_info "🔍 Testing service health endpoints..."
         test_health_endpoints
         
-        log_success "Full deployment completed successfully!"
         echo ""
+        log_success "🎉 Full deployment completed successfully!"
+        echo ""
+        log_info "📊 Current System Status:"
         show_status
         ;;
         
     "deploy")
-        log_header "Deploying CloudFormation stack..."
+        log_header "☁️  Deploying CloudFormation Infrastructure..."
         
         # Compile CloudFormation template
+        log_info "📋 Compiling CloudFormation template..."
         compile_cf_template || exit 1
         
         # Ask for stack name
         stack_name=$(prompt_stack_name)
         account_id=$(get_account_id)
         
-        # Deploy stack
+        # Deploy stack with enhanced monitoring
+        log_info "🚀 Starting AWS Cognito infrastructure deployment..."
         deployed_stack=$(deploy_stack $stack_name)
         if [ $? -ne 0 ]; then
+            log_error "❌ Infrastructure deployment failed"
             exit 1
         fi
         
         # Export environment config
+        log_info "⚙️  Configuring environment variables..."
         export_env_config $deployed_stack || exit 1
         
-        log_success "Deployment completed successfully!"
+        echo ""
+        log_success "🎉 Infrastructure deployment completed successfully!"
+        echo ""
+        log_info "📊 Stack Information:"
+        echo "   Stack Name: $deployed_stack"
+        echo "   Region: $(aws configure get region)"
+        echo "   Account: $account_id"
         ;;
         
     "delete")
