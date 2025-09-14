@@ -96,6 +96,10 @@ application-local.properties
 application-dev.properties
 application-prod.properties
 
+# Local run script temporary files (should not be committed)
+maven_pids.txt
+logs/
+
 # Docker
 *.log
 docker-compose.override.yml

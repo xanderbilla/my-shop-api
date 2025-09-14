@@ -20,7 +20,7 @@ public class HealthController {
         Map<String, Object> healthData = new HashMap<>();
         healthData.put("service", serviceName);
         healthData.put("status", "UP");
-        
+
         ApiResponse<Map<String, Object>> response = ApiResponse.success("Service is healthy", healthData);
         return ResponseEntity.ok(response);
     }
