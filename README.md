@@ -191,9 +191,3 @@ docker-compose up
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-
-- it still disply uuid in usernma while login and veirfy otp
-- and when we use /me it should display information about current logged in user so we should not pass username in params or in anyway
-- add endpoint to get role and update role. A user cam have multiple roles and roles can be updated by only the user who have ADMIN role.
-- add an endpoint called /change-password that used by loggedin user so he can change passowrd by entering current pass and new pass without any otp

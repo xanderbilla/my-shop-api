@@ -1,12 +1,12 @@
 package com.shop.auth.exception;
 
 import com.shop.auth.dto.ApiResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIdentityProviderException;
@@ -14,10 +14,9 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.CognitoIden
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
-    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Map<String, String>>> handleValidationExceptions(
@@ -37,6 +36,23 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST.value());
         response.setData(errors);
 
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Object>> handleJsonParsingException(HttpMessageNotReadableException ex) {
+        log.warn("JSON parsing error: {}", ex.getMessage());
+
+        String errorMessage = "Invalid request format";
+        
+        // Check if this is a role enum parsing error
+        if (ex.getMessage() != null && ex.getMessage().contains("UserRole")) {
+            errorMessage = "Invalid role specified. Valid roles are: USER, ADMIN, SUPPORT";
+        }
+
+        ApiResponse<Object> response = ApiResponse.error(
+                errorMessage,
+                HttpStatus.BAD_REQUEST.value());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
@@ -60,6 +76,16 @@ public class GlobalExceptionHandler {
                 ex.getMessage(),
                 HttpStatus.INTERNAL_SERVER_ERROR.value());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+
+    @ExceptionHandler(SecurityException.class)
+    public ResponseEntity<ApiResponse<Object>> handleSecurityException(SecurityException ex) {
+        log.warn("Security error: {}", ex.getMessage());
+
+        ApiResponse<Object> response = ApiResponse.error(
+                ex.getMessage(),
+                HttpStatus.FORBIDDEN.value());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
     }
 
     @ExceptionHandler(Exception.class)

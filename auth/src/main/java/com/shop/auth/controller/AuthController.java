@@ -6,29 +6,20 @@ import com.shop.auth.model.User;
 import com.shop.auth.service.AuthService;
 import com.shop.auth.service.JwtTokenService;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@RequiredArgsConstructor
 public class AuthController {
-
-    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private final AuthService authService;
     private final JwtTokenService jwtTokenService;
 
-    // Constructor for dependency injection
-    public AuthController(AuthService authService, JwtTokenService jwtTokenService) {
-        this.authService = authService;
-        this.jwtTokenService = jwtTokenService;
-    }
-
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<User>> signup(@Valid @RequestBody SignupRequest request) {
-        log.info("Signup request received for username: {}", request.getUsername());
         User user = authService.signup(request);
 
         ApiResponse<User> response = ApiResponse.success(
@@ -39,7 +30,6 @@ public class AuthController {
 
     @PostMapping("/signin")
     public ResponseEntity<ApiResponse<AuthResponse>> signin(@Valid @RequestBody SigninRequest request) {
-        log.info("Signin request received for username: {}", request.getUsername());
         AuthResponse authResponse = authService.signin(request);
 
         ApiResponse<AuthResponse> response = ApiResponse.success(
@@ -50,7 +40,6 @@ public class AuthController {
 
     @PostMapping("/verify")
     public ResponseEntity<ApiResponse<User>> verify(@Valid @RequestBody VerifyRequest request) {
-        log.info("Verification request received for username: {}", request.getUsername());
         User user = authService.verify(request);
 
         ApiResponse<User> response = ApiResponse.success(
@@ -75,12 +64,11 @@ public class AuthController {
         }
 
         try {
-            // Extract email from JWT token (Cognito uses email as username)
-            String email = jwtTokenService.extractEmailFromToken(token);
-            log.info("Get current user request for email: {}", email);
+            // Extract Cognito username (UUID) from JWT token
+            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
 
-            // Find the actual Cognito username based on email and get user info
-            User user = authService.getUserInfoByEmail(email);
+            // Get user info using the Cognito username
+            User user = authService.getUserInfo(cognitoUsername);
 
             ApiResponse<User> response = ApiResponse.success(
                     "User information retrieved successfully",
@@ -88,7 +76,6 @@ public class AuthController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            log.error("Error getting current user from token: {}", e.getMessage());
             throw new InvalidTokenException("Failed to extract user information from token");
         }
     }
@@ -108,8 +95,6 @@ public class AuthController {
             throw new InvalidTokenException("Invalid or expired token");
         }
 
-        log.info("Logout request received");
-
         // Logout from Cognito
         authService.logout(token);
 
@@ -124,7 +109,6 @@ public class AuthController {
 
     @PostMapping("/forgot-password")
     public ResponseEntity<ApiResponse<String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-        log.info("Forgot password request received for email: {}", request.getEmail());
         authService.forgotPassword(request.getEmail());
 
         ApiResponse<String> response = ApiResponse.success(
@@ -135,7 +119,6 @@ public class AuthController {
 
     @PostMapping("/reset-password")
     public ResponseEntity<ApiResponse<String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        log.info("Reset password request received for email: {}", request.getEmail());
         authService.resetPassword(request.getEmail(), request.getVerificationCode(), request.getNewPassword());
 
         ApiResponse<String> response = ApiResponse.success(
@@ -146,7 +129,6 @@ public class AuthController {
 
     @PostMapping("/resend-otp")
     public ResponseEntity<ApiResponse<String>> resendOtp(@Valid @RequestBody ResendOtpRequest request) {
-        log.info("Resend OTP request received for email: {}", request.getEmail());
         authService.resendVerificationCode(request.getEmail());
 
         ApiResponse<String> response = ApiResponse.success(
@@ -162,5 +144,91 @@ public class AuthController {
                 "Auth service is running",
                 "ACTIVE");
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/roles")
+    public ResponseEntity<ApiResponse<GetRoleResponse>> getUserRoles(
+            @RequestHeader("Authorization") String authorizationHeader) {
+        try {
+            String token = authorizationHeader.replace("Bearer ", "");
+            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
+
+            User user = authService.getUserInfo(cognitoUsername);
+            GetRoleResponse roleResponse = new GetRoleResponse(user.getUsername(), user.getEmail(), user.getRoles());
+
+            ApiResponse<GetRoleResponse> response = ApiResponse.success(
+                    "User roles retrieved successfully",
+                    roleResponse);
+            return ResponseEntity.ok(response);
+        } catch (InvalidTokenException e) {
+            ApiResponse<GetRoleResponse> response = ApiResponse.error("Invalid token: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        } catch (Exception e) {
+            ApiResponse<GetRoleResponse> response = ApiResponse.error("Failed to get user roles: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
+    @PutMapping("/roles")
+    public ResponseEntity<ApiResponse<String>> updateUserRoles(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @Valid @RequestBody UpdateRoleRequest request) {
+        try {
+            String token = authorizationHeader.replace("Bearer ", "");
+            String requesterCognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
+
+            // For now, assume the username is an email (we can enhance this later)
+            String targetUserEmail = request.getUsername();
+            if (!targetUserEmail.contains("@")) {
+                // If it's not an email, try to find the email by username
+                targetUserEmail = authService.findEmailByCustomUsername(request.getUsername());
+                if (targetUserEmail == null) {
+                    throw new RuntimeException("User not found with username: " + request.getUsername());
+                }
+            }
+
+            authService.updateUserRoles(targetUserEmail, request.getRoles(), requesterCognitoUsername);
+
+            ApiResponse<String> response = ApiResponse.success(
+                    "User roles updated successfully",
+                    "ROLES_UPDATED");
+            return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            ApiResponse<String> response = ApiResponse.error("Access denied: " + e.getMessage(),
+                    HttpStatus.FORBIDDEN.value());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+        } catch (InvalidTokenException e) {
+            ApiResponse<String> response = ApiResponse.error("Invalid token: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        } catch (Exception e) {
+            ApiResponse<String> response = ApiResponse.error("Failed to update user roles: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<ApiResponse<String>> changePassword(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @Valid @RequestBody ChangePasswordRequest request) {
+        try {
+            String token = authorizationHeader.replace("Bearer ", "");
+            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
+
+            authService.changePassword(cognitoUsername, request.getCurrentPassword(), request.getNewPassword());
+
+            ApiResponse<String> response = ApiResponse.success(
+                    "Password changed successfully",
+                    "PASSWORD_CHANGED");
+            return ResponseEntity.ok(response);
+        } catch (SecurityException e) {
+            ApiResponse<String> response = ApiResponse.error("Current password is incorrect");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        } catch (InvalidTokenException e) {
+            ApiResponse<String> response = ApiResponse.error("Invalid token: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        } catch (Exception e) {
+            ApiResponse<String> response = ApiResponse.error("Failed to change password: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
     }
 }

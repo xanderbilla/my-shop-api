@@ -1,7 +1,13 @@
 package com.shop.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class VerifyRequest {
 
     @NotBlank(message = "Username is required")
@@ -9,32 +15,4 @@ public class VerifyRequest {
 
     @NotBlank(message = "Verification code is required")
     private String verificationCode;
-
-    // Default constructor
-    public VerifyRequest() {
-    }
-
-    // All-args constructor
-    public VerifyRequest(String username, String verificationCode) {
-        this.username = username;
-        this.verificationCode = verificationCode;
-    }
-
-    // Getters
-    public String getUsername() {
-        return username;
-    }
-
-    public String getVerificationCode() {
-        return verificationCode;
-    }
-
-    // Setters
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public void setVerificationCode(String verificationCode) {
-        this.verificationCode = verificationCode;
-    }
 }

@@ -7,8 +7,7 @@ import com.shop.auth.dto.SignupRequest;
 import com.shop.auth.dto.VerifyRequest;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.model.User;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
@@ -18,21 +17,17 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class AuthService {
-
-    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final CognitoIdentityProviderClient cognitoClient;
     private final CognitoConfig cognitoConfig;
-
-    // Constructor for dependency injection
-    public AuthService(CognitoIdentityProviderClient cognitoClient, CognitoConfig cognitoConfig) {
-        this.cognitoClient = cognitoClient;
-        this.cognitoConfig = cognitoConfig;
-    }
 
     public User signup(SignupRequest request) {
         try {
@@ -77,40 +72,36 @@ public class AuthService {
             }
 
             SignUpResponse signUpResponse = cognitoClient.signUp(signUpBuilder.build());
-            log.info("User signup initiated for email: {}, username: {}, UserSub: {}",
-                    request.getEmail(), request.getUsername(), signUpResponse.userSub());
 
             return User.builder()
                     .username(request.getUsername()) // Keep the custom username in our system
                     .name(request.getName())
                     .email(request.getEmail())
                     .isVerified(false) // User needs to verify email
-                    .role(request.getRole())
+                    .roles(List.of(request.getRole())) // Convert single role to list
                     .build();
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error creating user: {}", e.getMessage());
             throw new RuntimeException("Failed to create user: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
-            log.error("Unexpected error during signup: {}", e.getMessage());
             throw new RuntimeException("Signup failed: " + e.getMessage());
         }
     }
 
     public AuthResponse signin(SigninRequest request) {
         try {
-            // Find the actual Cognito username (UUID) based on custom username
-            String actualCognitoUsername = findCognitoUsernameByCustomUsername(request.getUsername());
+            // Find the user's email (actual Cognito username) by their custom username
+            String userEmail = findEmailByCustomUsername(request.getUsername());
 
-            // Calculate secret hash using the actual Cognito username
+            // Calculate secret hash using the email (actual Cognito username)
             String secretHash = null;
             if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                secretHash = calculateSecretHash(actualCognitoUsername);
+                secretHash = calculateSecretHash(userEmail);
             }
 
-            // Build auth parameters
+            // Build auth parameters using email as username
             Map<String, String> authParameters = new HashMap<>();
-            authParameters.put("USERNAME", actualCognitoUsername);
+            authParameters.put("USERNAME", userEmail);
             authParameters.put("PASSWORD", request.getPassword());
             if (secretHash != null) {
                 authParameters.put("SECRET_HASH", secretHash);
@@ -129,19 +120,17 @@ public class AuthService {
                 throw new RuntimeException("Authentication challenge required: " + authResponse.challengeName());
             }
 
-            // Get user attributes using the actual Cognito username
-            User user = getUserInfo(actualCognitoUsername);
+            // Get user attributes using the email
+            User user = getUserInfo(userEmail);
 
-            // Replace the Cognito UUID with the custom username in the response
+            // Replace the email with the custom username in the response
             User userWithCustomUsername = User.builder()
-                    .username(request.getUsername()) // Use custom username instead of UUID
+                    .username(request.getUsername()) // Use custom username instead of email
                     .name(user.getName())
                     .email(user.getEmail())
                     .isVerified(user.isVerified())
-                    .role(user.getRole())
+                    .roles(user.getRoles())
                     .build();
-
-            log.info("User signed in successfully: {} (Cognito ID: {})", request.getUsername(), actualCognitoUsername);
 
             return new AuthResponse(
                     authResponse.authenticationResult().accessToken(),
@@ -149,28 +138,26 @@ public class AuthService {
                     userWithCustomUsername);
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error signing in user: {}", e.getMessage());
             throw new RuntimeException("Sign in failed: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
-            log.error("Unexpected error during signin: {}", e.getMessage());
             throw new RuntimeException("Sign in failed: " + e.getMessage());
         }
     }
 
     public User verify(VerifyRequest request) {
         try {
-            // Find the actual Cognito username (UUID) based on custom username
-            String actualCognitoUsername = findCognitoUsernameByCustomUsername(request.getUsername());
+            // Find the user's email (actual Cognito username) by their custom username
+            String userEmail = findEmailByCustomUsername(request.getUsername());
 
-            // Calculate secret hash using the actual Cognito username
+            // Calculate secret hash using the email (actual Cognito username)
             String secretHash = null;
             if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                secretHash = calculateSecretHash(actualCognitoUsername);
+                secretHash = calculateSecretHash(userEmail);
             }
 
             ConfirmSignUpRequest.Builder confirmSignUpBuilder = ConfirmSignUpRequest.builder()
                     .clientId(cognitoConfig.getClientId())
-                    .username(actualCognitoUsername)
+                    .username(userEmail)
                     .confirmationCode(request.getVerificationCode());
 
             if (secretHash != null) {
@@ -179,23 +166,19 @@ public class AuthService {
 
             cognitoClient.confirmSignUp(confirmSignUpBuilder.build());
 
-            log.info("User verified successfully: {} (Cognito ID: {})", request.getUsername(), actualCognitoUsername);
-
-            // Get user info and replace UUID with custom username
-            User user = getUserInfo(actualCognitoUsername);
+            // Get user info and replace email with custom username
+            User user = getUserInfo(userEmail);
             return User.builder()
-                    .username(request.getUsername()) // Use custom username instead of UUID
+                    .username(request.getUsername()) // Use custom username instead of email
                     .name(user.getName())
                     .email(user.getEmail())
                     .isVerified(user.isVerified())
-                    .role(user.getRole())
+                    .roles(user.getRoles())
                     .build();
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error verifying user: {}", e.getMessage());
             throw new RuntimeException("Verification failed: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
-            log.error("Unexpected error during verification: {}", e.getMessage());
             throw new RuntimeException("Verification failed: " + e.getMessage());
         }
     }
@@ -212,6 +195,7 @@ public class AuthService {
             // Extract user attributes
             String name = null;
             String email = null;
+            String preferredUsername = null;
             String roleStr = null;
             boolean isVerified = getUserResponse.userStatus() == UserStatusType.CONFIRMED;
 
@@ -223,34 +207,62 @@ public class AuthService {
                     case "email":
                         email = attribute.value();
                         break;
+                    case "preferred_username":
+                        preferredUsername = attribute.value();
+                        break;
                     case "custom:role":
                         roleStr = attribute.value();
+                        break;
+                    case "role": // Also check for 'role' attribute without custom prefix
+                        if (roleStr == null) { // Only use if custom:role wasn't found
+                            roleStr = attribute.value();
+                        }
                         break;
                 }
             }
 
-            UserRole role = UserRole.USER; // Default
-            if (roleStr != null) {
-                try {
-                    role = UserRole.valueOf(roleStr);
-                } catch (IllegalArgumentException e) {
-                    log.warn("Invalid role value: {}, defaulting to USER", roleStr);
+            // Parse multiple roles from comma-separated string
+            List<UserRole> roles = new ArrayList<>();
+            if (roleStr != null && !roleStr.trim().isEmpty()) {
+                String[] roleArray = roleStr.split(",");
+                for (String roleName : roleArray) {
+                    try {
+                        UserRole role = UserRole.valueOf(roleName.trim());
+                        roles.add(role);
+                    } catch (IllegalArgumentException e) {
+                        // Skip invalid roles
+                    }
+                }
+            }
+            
+            // If no valid roles were found, default to USER
+            if (roles.isEmpty()) {
+                roles.add(UserRole.USER);
+            }
+
+            // Generate user-friendly username
+            String displayUsername = preferredUsername;
+            if (displayUsername == null || displayUsername.trim().isEmpty()) {
+                // If no preferred_username, generate from email
+                if (email != null) {
+                    displayUsername = email.substring(0, email.indexOf('@'));
+                } else {
+                    displayUsername = "user" + username.substring(0, 8); // Use first 8 chars of UUID
                 }
             }
 
             return User.builder()
-                    .username(username)
+                    .userId(username) // Store Cognito UUID as userId
+                    .username(displayUsername) // Store user-friendly username
                     .name(name)
                     .email(email)
                     .isVerified(isVerified)
-                    .role(role)
+                    .roles(roles) // Use the multiple roles list
                     .build();
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error getting user info: {}", e.getMessage());
             throw new RuntimeException("Failed to get user info: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
-            log.error("Unexpected error getting user info: {}", e.getMessage());
             throw new RuntimeException("Failed to get user info: " + e.getMessage());
         }
     }
@@ -263,13 +275,10 @@ public class AuthService {
                     .build();
 
             cognitoClient.globalSignOut(signOutRequest);
-            log.info("User logged out successfully");
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error logging out user: {}", e.getMessage());
             throw new RuntimeException("Logout failed: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
-            log.error("Unexpected error during logout: {}", e.getMessage());
             throw new RuntimeException("Logout failed: " + e.getMessage());
         }
     }
@@ -291,13 +300,10 @@ public class AuthService {
             }
 
             cognitoClient.forgotPassword(forgotPasswordBuilder.build());
-            log.info("Password reset code sent to email: {}", email);
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error sending password reset code: {}", e.getMessage());
             throw new RuntimeException("Failed to send reset code: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
-            log.error("Unexpected error during forgot password: {}", e.getMessage());
             throw new RuntimeException("Failed to send reset code: " + e.getMessage());
         }
     }
@@ -321,13 +327,10 @@ public class AuthService {
             }
 
             cognitoClient.confirmForgotPassword(confirmForgotPasswordBuilder.build());
-            log.info("Password reset successfully for email: {}", email);
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error resetting password: {}", e.getMessage());
             throw new RuntimeException("Failed to reset password: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
-            log.error("Unexpected error during password reset: {}", e.getMessage());
             throw new RuntimeException("Failed to reset password: " + e.getMessage());
         }
     }
@@ -349,13 +352,10 @@ public class AuthService {
             }
 
             cognitoClient.resendConfirmationCode(resendCodeBuilder.build());
-            log.info("Verification code resent to email: {}", email);
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error resending verification code: {}", e.getMessage());
             throw new RuntimeException("Failed to resend verification code: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
-            log.error("Unexpected error during resend verification: {}", e.getMessage());
             throw new RuntimeException("Failed to resend verification code: " + e.getMessage());
         }
     }
@@ -374,11 +374,10 @@ public class AuthService {
                     .name(user.getName())
                     .email(user.getEmail())
                     .isVerified(user.isVerified())
-                    .role(user.getRole())
+                    .roles(user.getRoles())
                     .build();
 
         } catch (Exception e) {
-            log.error("Error getting user info by custom username: {}", e.getMessage());
             throw new RuntimeException("Failed to get user info: " + e.getMessage());
         }
     }
@@ -397,18 +396,111 @@ public class AuthService {
                     .name(user.getName())
                     .email(user.getEmail())
                     .isVerified(user.isVerified())
-                    .role(user.getRole())
+                    .roles(user.getRoles())
                     .build();
 
         } catch (Exception e) {
-            log.error("Error getting user info by email: {}", e.getMessage());
             throw new RuntimeException("Failed to get user info: " + e.getMessage());
+        }
+    }
+
+    public List<UserRole> getUserRoles(String email) {
+        try {
+            User user = getUserInfo(email);
+            return user.getRoles();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get user roles: " + e.getMessage());
+        }
+    }
+
+    public void updateUserRoles(String email, List<UserRole> newRoles, String requesterIdentifier) {
+        try {
+            // Check if requester has ADMIN role
+            // requesterIdentifier could be either email or Cognito username (UUID)
+            User requester;
+            if (requesterIdentifier.contains("@")) {
+                // It's an email
+                requester = getUserInfoByEmail(requesterIdentifier);
+            } else {
+                // It's a Cognito username (UUID)
+                requester = getUserInfo(requesterIdentifier);
+            }
+
+            if (requester == null || !requester.hasRole(UserRole.ADMIN)) {
+                throw new SecurityException("Only ADMIN users can update roles");
+            }
+
+            // Get target user (email is always email in this method)
+            User user = getUserInfoByEmail(email);
+            if (user == null) {
+                throw new RuntimeException("User not found with email: " + email);
+            }
+
+            // Update user attributes in Cognito with new roles
+            String rolesAsString = newRoles.stream()
+                    .map(UserRole::toString)
+                    .collect(Collectors.joining(","));
+
+            AdminUpdateUserAttributesRequest updateRequest = AdminUpdateUserAttributesRequest.builder()
+                    .userPoolId(cognitoConfig.getUserPoolId())
+                    .username(email)
+                    .userAttributes(
+                            AttributeType.builder()
+                                    .name("custom:role")
+                                    .value(rolesAsString)
+                                    .build())
+                    .build();
+
+            cognitoClient.adminUpdateUserAttributes(updateRequest);
+
+        } catch (SecurityException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to update user roles: " + e.getMessage());
         }
     }
 
     /**
      * Find the actual Cognito username (UUID) by custom username
      */
+    /**
+     * Find the email (actual Cognito username) by custom username
+     */
+    public String findEmailByCustomUsername(String customUsername) {
+        try {
+            // Use ListUsers to find user by custom username attribute
+            ListUsersRequest listUsersRequest = ListUsersRequest.builder()
+                    .userPoolId(cognitoConfig.getUserPoolId())
+                    .build();
+
+            ListUsersResponse response = cognitoClient.listUsers(listUsersRequest);
+
+            // Find the user with matching custom:username attribute and return their email
+            for (UserType user : response.users()) {
+                String userCustomUsername = null;
+                String userEmail = null;
+
+                for (AttributeType attribute : user.attributes()) {
+                    if ("custom:username".equals(attribute.name())) {
+                        userCustomUsername = attribute.value();
+                    } else if ("email".equals(attribute.name())) {
+                        userEmail = attribute.value();
+                    }
+                }
+
+                // If we found the user with matching custom username, return their email
+                if (customUsername.equals(userCustomUsername) && userEmail != null) {
+                    return userEmail;
+                }
+            }
+
+            throw new RuntimeException("User not found with username: " + customUsername);
+
+        } catch (CognitoIdentityProviderException e) {
+            throw new RuntimeException("User lookup failed: " + e.awsErrorDetails().errorMessage());
+        }
+    }
+
     private String findCognitoUsernameByCustomUsername(String customUsername) {
         try {
             // Use ListUsers to find user by custom username attribute
@@ -431,7 +523,6 @@ public class AuthService {
             throw new RuntimeException("User not found with username: " + customUsername);
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error finding user by custom username: {}", e.getMessage());
             throw new RuntimeException("User lookup failed: " + e.awsErrorDetails().errorMessage());
         }
     }
@@ -471,7 +562,6 @@ public class AuthService {
             throw new RuntimeException("User not found with email: " + email);
 
         } catch (CognitoIdentityProviderException e) {
-            log.error("Error finding custom username by email: {}", e.getMessage());
             throw new RuntimeException("User lookup failed: " + e.awsErrorDetails().errorMessage());
         }
     }
@@ -488,6 +578,49 @@ public class AuthService {
             return Base64.getEncoder().encodeToString(hash);
         } catch (Exception e) {
             throw new RuntimeException("Error calculating secret hash", e);
+        }
+    }
+
+    public void changePassword(String usernameOrEmail, String currentPassword, String newPassword) {
+        try {
+            // Determine if it's an email or Cognito username
+            String cognitoUsername;
+            if (usernameOrEmail.contains("@")) {
+                // It's an email
+                cognitoUsername = usernameOrEmail;
+            } else {
+                // It's a Cognito UUID, use it directly
+                cognitoUsername = usernameOrEmail;
+            }
+
+            // First verify the current password by attempting to authenticate
+            AdminInitiateAuthRequest authRequest = AdminInitiateAuthRequest.builder()
+                    .userPoolId(cognitoConfig.getUserPoolId())
+                    .clientId(cognitoConfig.getClientId())
+                    .authFlow(AuthFlowType.ADMIN_NO_SRP_AUTH)
+                    .authParameters(Map.of(
+                            "USERNAME", cognitoUsername,
+                            "PASSWORD", currentPassword,
+                            "SECRET_HASH", calculateSecretHash(cognitoUsername)))
+                    .build();
+
+            // This will throw an exception if current password is wrong
+            cognitoClient.adminInitiateAuth(authRequest);
+
+            // If we reach here, current password is correct, proceed with password change
+            AdminSetUserPasswordRequest setPasswordRequest = AdminSetUserPasswordRequest.builder()
+                    .userPoolId(cognitoConfig.getUserPoolId())
+                    .username(cognitoUsername)
+                    .password(newPassword)
+                    .permanent(true) // Set as permanent password (not temporary)
+                    .build();
+
+            cognitoClient.adminSetUserPassword(setPasswordRequest);
+
+        } catch (NotAuthorizedException e) {
+            throw new SecurityException("Current password is incorrect");
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to change password: " + e.getMessage());
         }
     }
 }

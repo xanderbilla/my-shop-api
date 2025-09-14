@@ -2,8 +2,6 @@ package com.shop.auth.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.Base64;
@@ -12,8 +10,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class JwtTokenService {
-
-    private static final Logger log = LoggerFactory.getLogger(JwtTokenService.class);
 
     // In-memory blacklist for tokens (in production, use Redis or database)
     private final Set<String> blacklistedTokens = ConcurrentHashMap.newKeySet();
@@ -25,7 +21,6 @@ public class JwtTokenService {
      */
     public boolean isValidToken(String token) {
         if (isTokenBlacklisted(token)) {
-            log.warn("Token is blacklisted");
             return false;
         }
         return true;
@@ -36,7 +31,6 @@ public class JwtTokenService {
      */
     public void blacklistToken(String token) {
         blacklistedTokens.add(token);
-        log.info("Token blacklisted successfully");
     }
 
     /**
@@ -78,7 +72,6 @@ public class JwtTokenService {
 
             throw new RuntimeException("Username/email not found in token");
         } catch (Exception e) {
-            log.error("Error extracting username from token: {}", e.getMessage());
             throw new RuntimeException("Failed to extract username from token", e);
         }
     }
@@ -98,26 +91,52 @@ public class JwtTokenService {
 
             throw new RuntimeException("Custom username not found in token");
         } catch (Exception e) {
-            log.error("Error extracting custom username from token: {}", e.getMessage());
             throw new RuntimeException("Failed to extract custom username from token", e);
         }
     }
 
     /**
      * Extract email from JWT token payload
+     * For Cognito tokens, we extract the username (UUID) and use it to get user
+     * info
      */
     public String extractEmailFromToken(String token) {
         try {
             JsonNode payload = extractPayloadFromToken(token);
+
+            // First try to get email directly (if available)
             JsonNode emailNode = payload.get("email");
-            if (emailNode != null) {
+            if (emailNode != null && !emailNode.isNull()) {
                 return emailNode.asText();
             }
 
-            throw new RuntimeException("Email not found in token");
+            // If email not available, extract username (UUID) which is the Cognito username
+            JsonNode usernameNode = payload.get("username");
+            if (usernameNode != null && !usernameNode.isNull()) {
+                // Return the username (UUID) which can be used to lookup user info from Cognito
+                return usernameNode.asText();
+            }
+
+            throw new RuntimeException("Neither email nor username found in token");
         } catch (Exception e) {
-            log.error("Error extracting email from token: {}", e.getMessage());
             throw new RuntimeException("Failed to extract email from token", e);
+        }
+    }
+
+    /**
+     * Extract Cognito username (UUID) from JWT token
+     */
+    public String extractCognitoUsernameFromToken(String token) {
+        try {
+            JsonNode payload = extractPayloadFromToken(token);
+            JsonNode usernameNode = payload.get("username");
+            if (usernameNode != null && !usernameNode.isNull()) {
+                return usernameNode.asText();
+            }
+
+            throw new RuntimeException("Username not found in token");
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to extract username from token", e);
         }
     }
 
@@ -140,7 +159,6 @@ public class JwtTokenService {
             // Parse the JSON payload
             return objectMapper.readTree(decodedPayload);
         } catch (Exception e) {
-            log.error("Error extracting payload from token: {}", e.getMessage());
             throw new RuntimeException("Failed to extract payload from token", e);
         }
     }

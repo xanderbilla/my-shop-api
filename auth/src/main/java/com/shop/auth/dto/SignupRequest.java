@@ -4,7 +4,13 @@ import com.shop.auth.enums.UserRole;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class SignupRequest {
 
     @NotBlank(message = "Username is required")
@@ -26,58 +32,7 @@ public class SignupRequest {
     // Optional role, defaults to USER if not provided
     private UserRole role;
 
-    // Default constructor
-    public SignupRequest() {
-    }
-
-    // All-args constructor
-    public SignupRequest(String username, String name, String email, String password, UserRole role) {
-        this.username = username;
-        this.name = name;
-        this.email = email;
-        this.password = password;
-        this.role = role;
-    }
-
-    // Getters
-    public String getUsername() {
-        return username;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
     public UserRole getRole() {
         return role != null ? role : UserRole.USER;
-    }
-
-    // Setters
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    public void setRole(UserRole role) {
-        this.role = role;
     }
 }
