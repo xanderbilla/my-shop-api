@@ -1,0 +1,21 @@
+# Docker/Production environment configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: never  # Security: Hide details in production
+      show-components: never
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://service-registry:8761/eureka/
+
+logging:
+  level:
+    '[org.springframework.cloud.gateway]': INFO
+    '[org.springframework.cloud.loadbalancer]': INFO
+    root: INFO

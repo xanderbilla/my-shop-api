@@ -1,8 +1,15 @@
 package com.shop.auth.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.time.LocalDateTime;
 
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ApiResponse<T> {
     private String message;
@@ -11,23 +18,19 @@ public class ApiResponse<T> {
     private int status;
     private LocalDateTime timestamp;
 
-    public ApiResponse() {
-        this.timestamp = LocalDateTime.now();
-    }
-
     public ApiResponse(String message, boolean success, int status) {
-        this();
         this.message = message;
         this.success = success;
         this.status = status;
+        this.timestamp = LocalDateTime.now();
     }
 
     public ApiResponse(String message, T data, boolean success, int status) {
-        this();
         this.message = message;
         this.data = data;
         this.success = success;
         this.status = status;
+        this.timestamp = LocalDateTime.now();
     }
 
     // Static factory methods for common responses
@@ -45,46 +48,5 @@ public class ApiResponse<T> {
 
     public static <T> ApiResponse<T> error(String message) {
         return new ApiResponse<>(message, false, 500);
-    }
-
-    // Getters and Setters
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public T getData() {
-        return data;
-    }
-
-    public void setData(T data) {
-        this.data = data;
-    }
-
-    public boolean isSuccess() {
-        return success;
-    }
-
-    public void setSuccess(boolean success) {
-        this.success = success;
-    }
-
-    public int getStatus() {
-        return status;
-    }
-
-    public void setStatus(int status) {
-        this.status = status;
-    }
-
-    public LocalDateTime getTimestamp() {
-        return timestamp;
-    }
-
-    public void setTimestamp(LocalDateTime timestamp) {
-        this.timestamp = timestamp;
     }
 }

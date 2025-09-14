@@ -1,0 +1,21 @@
+# Kubernetes environment configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, gateway
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: always
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://service-registry.spring-microservice.svc.cluster.local:8761/eureka/
+
+logging:
+  level:
+    '[org.springframework.cloud.gateway]': INFO
+    '[org.springframework.cloud.loadbalancer]': INFO
+    root: INFO
