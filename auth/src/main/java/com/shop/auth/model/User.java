@@ -1,6 +1,8 @@
 package com.shop.auth.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.shop.auth.enums.UserRole;
+import com.shop.auth.enums.UserStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,8 +20,11 @@ public class User {
     private String username; // User-friendly username
     private String name;
     private String email;
+
+    @JsonProperty("verified")
     private boolean isVerified;
     private List<UserRole> roles;
+    private UserStatus status;
 
     // Constructor for creating user without roles (defaults to USER)
     public User(String userId, String username, String name, String email, boolean isVerified) {
@@ -30,6 +35,7 @@ public class User {
         this.isVerified = isVerified;
         this.roles = new ArrayList<>();
         this.roles.add(UserRole.USER);
+        this.status = UserStatus.ACTIVE; // Default status
     }
 
     // Helper method to check if user has a specific role

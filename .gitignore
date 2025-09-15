@@ -139,6 +139,7 @@ node_modules/
 .env
 .env.test
 .env.production
+.env.cognito
 
 # AWS credentials
 .aws/

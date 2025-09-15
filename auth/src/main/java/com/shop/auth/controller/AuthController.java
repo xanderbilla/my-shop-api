@@ -52,48 +52,19 @@ public class AuthController {
     public ResponseEntity<ApiResponse<User>> getCurrentUser(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        // Check if Authorization header is present
-        if (authHeader == null || authHeader.trim().isEmpty()) {
-            throw new InvalidTokenException("Authorization header is required");
-        }
+        User user = validateTokenAndGetUser(authHeader);
 
-        // Extract and validate token
-        String token = jwtTokenService.extractTokenFromHeader(authHeader);
-        if (token == null || !jwtTokenService.isValidToken(token)) {
-            throw new InvalidTokenException("Invalid or expired token");
-        }
-
-        try {
-            // Extract Cognito username (UUID) from JWT token
-            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
-
-            // Get user info using the Cognito username
-            User user = authService.getUserInfo(cognitoUsername);
-
-            ApiResponse<User> response = ApiResponse.success(
-                    "User information retrieved successfully",
-                    user);
-            return ResponseEntity.ok(response);
-
-        } catch (Exception e) {
-            throw new InvalidTokenException("Failed to extract user information from token");
-        }
+        ApiResponse<User> response = ApiResponse.success(
+                "User information retrieved successfully",
+                user);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<String>> logout(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        // Check if Authorization header is present
-        if (authHeader == null || authHeader.trim().isEmpty()) {
-            throw new InvalidTokenException("Authorization header is required");
-        }
-
-        // Extract and validate token
-        String token = jwtTokenService.extractTokenFromHeader(authHeader);
-        if (token == null || !jwtTokenService.isValidToken(token)) {
-            throw new InvalidTokenException("Invalid or expired token");
-        }
+        String token = validateAndExtractToken(authHeader);
 
         // Logout from Cognito
         authService.logout(token);
@@ -137,12 +108,18 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
-    // Health check endpoint for the auth controller
     @GetMapping("/status")
-    public ResponseEntity<ApiResponse<String>> status() {
-        ApiResponse<String> response = ApiResponse.success(
-                "Auth service is running",
-                "ACTIVE");
+    public ResponseEntity<ApiResponse<StatusResponse>> status(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        User user = validateTokenAndGetUser(authHeader);
+
+        StatusResponse statusResponse = new StatusResponse(
+                user.getStatus() != null ? user.getStatus().toString() : "ACTIVE");
+
+        ApiResponse<StatusResponse> response = ApiResponse.success(
+                "User status retrieved successfully",
+                statusResponse);
         return ResponseEntity.ok(response);
     }
 
@@ -150,10 +127,7 @@ public class AuthController {
     public ResponseEntity<ApiResponse<GetRoleResponse>> getUserRoles(
             @RequestHeader("Authorization") String authorizationHeader) {
         try {
-            String token = authorizationHeader.replace("Bearer ", "");
-            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
-
-            User user = authService.getUserInfo(cognitoUsername);
+            User user = validateTokenAndGetUser(authorizationHeader);
             GetRoleResponse roleResponse = new GetRoleResponse(user.getUsername(), user.getEmail(), user.getRoles());
 
             ApiResponse<GetRoleResponse> response = ApiResponse.success(
@@ -169,49 +143,12 @@ public class AuthController {
         }
     }
 
-    @PutMapping("/roles")
-    public ResponseEntity<ApiResponse<String>> updateUserRoles(
-            @RequestHeader("Authorization") String authorizationHeader,
-            @Valid @RequestBody UpdateRoleRequest request) {
-        try {
-            String token = authorizationHeader.replace("Bearer ", "");
-            String requesterCognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
-
-            // For now, assume the username is an email (we can enhance this later)
-            String targetUserEmail = request.getUsername();
-            if (!targetUserEmail.contains("@")) {
-                // If it's not an email, try to find the email by username
-                targetUserEmail = authService.findEmailByCustomUsername(request.getUsername());
-                if (targetUserEmail == null) {
-                    throw new RuntimeException("User not found with username: " + request.getUsername());
-                }
-            }
-
-            authService.updateUserRoles(targetUserEmail, request.getRoles(), requesterCognitoUsername);
-
-            ApiResponse<String> response = ApiResponse.success(
-                    "User roles updated successfully",
-                    "ROLES_UPDATED");
-            return ResponseEntity.ok(response);
-        } catch (SecurityException e) {
-            ApiResponse<String> response = ApiResponse.error("Access denied: " + e.getMessage(),
-                    HttpStatus.FORBIDDEN.value());
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
-        } catch (InvalidTokenException e) {
-            ApiResponse<String> response = ApiResponse.error("Invalid token: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
-        } catch (Exception e) {
-            ApiResponse<String> response = ApiResponse.error("Failed to update user roles: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
-        }
-    }
-
     @PostMapping("/change-password")
     public ResponseEntity<ApiResponse<String>> changePassword(
             @RequestHeader("Authorization") String authorizationHeader,
             @Valid @RequestBody ChangePasswordRequest request) {
         try {
-            String token = authorizationHeader.replace("Bearer ", "");
+            String token = validateAndExtractToken(authorizationHeader);
             String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
 
             authService.changePassword(cognitoUsername, request.getCurrentPassword(), request.getNewPassword());
@@ -230,5 +167,57 @@ public class AuthController {
             ApiResponse<String> response = ApiResponse.error("Failed to change password: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
+    }
+
+    // ===============================
+    // UTILITY METHODS (Reusable)
+    // ===============================
+
+    /**
+     * Validates authorization header and extracts JWT token
+     * 
+     * @param authHeader Authorization header from request
+     * @return Validated JWT token
+     * @throws InvalidTokenException if token is invalid or missing
+     */
+    private String validateAndExtractToken(String authHeader) {
+        if (authHeader == null || authHeader.trim().isEmpty()) {
+            throw new InvalidTokenException("Authorization header is required");
+        }
+
+        String token = jwtTokenService.extractTokenFromHeader(authHeader);
+        if (token == null || !jwtTokenService.isValidToken(token)) {
+            throw new InvalidTokenException("Invalid or expired token");
+        }
+
+        return token;
+    }
+
+    /**
+     * Extracts Cognito username from JWT token and retrieves user info
+     * 
+     * @param token Validated JWT token
+     * @return User object with complete information
+     * @throws InvalidTokenException if user extraction fails
+     */
+    private User extractUserFromToken(String token) {
+        try {
+            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
+            return authService.getUserInfo(cognitoUsername);
+        } catch (Exception e) {
+            throw new InvalidTokenException("Failed to extract user information from token");
+        }
+    }
+
+    /**
+     * Complete token validation and user extraction in one step
+     * 
+     * @param authHeader Authorization header from request
+     * @return User object with complete information
+     * @throws InvalidTokenException if validation fails
+     */
+    private User validateTokenAndGetUser(String authHeader) {
+        String token = validateAndExtractToken(authHeader);
+        return extractUserFromToken(token);
     }
 }

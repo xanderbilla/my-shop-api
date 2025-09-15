@@ -25,7 +25,6 @@ Resources:
     Properties:
       UserPoolName: !Sub '${ServiceName}-${Environment}-user-pool'
       AliasAttributes:
-        - email
         - preferred_username
       AutoVerifiedAttributes:
         - email
@@ -55,6 +54,10 @@ Resources:
           AttributeDataType: String
           Mutable: true
           Required: false
+        - Name: username
+          AttributeDataType: String
+          Mutable: true
+          Required: false
       UserAttributeUpdateSettings:
         AttributesRequireVerificationBeforeUpdate:
           - email
@@ -71,7 +74,7 @@ Resources:
       UserPoolId: !Ref CognitoUserPool
       GenerateSecret: true
       ExplicitAuthFlows:
-        - ADMIN_NO_SRP_AUTH
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
         - ALLOW_USER_PASSWORD_AUTH
         - ALLOW_REFRESH_TOKEN_AUTH
       PreventUserExistenceErrors: ENABLED
@@ -141,7 +144,7 @@ Resources:
                   - cognito-idp:ResendConfirmationCode
                   - cognito-idp:ForgotPassword
                   - cognito-idp:ConfirmForgotPassword
-                Resource: !Sub '${CognitoUserPool}/*'
+                Resource: !GetAtt CognitoUserPool.Arn
       Tags:
         - Key: Environment
           Value: !Ref Environment

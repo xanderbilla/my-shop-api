@@ -5,7 +5,15 @@
 
 set -e
 
-# Configuration
+# Conf# Function to prompt for stack name
+prompt_stack_name() {
+    local default_stack="spring-microservice-cognito"
+    read -p "Enter stack name [$default_stack]: " stack_name
+    stack_name=${stack_name:-$default_stack}
+    echo $stack_name
+}
+
+# Function to show helpon
 PROJECT_NAME="spring-microservice"
 SERVICES=("service-registry" "api-gateway" "auth" "admin" "client")
 SERVICE_PORTS=(8761 8080 8082 8083 8084)
@@ -90,153 +98,6 @@ prompt_stack_name() {
     echo $stack_name
 }
 
-# Function to compile and validate CloudFormation template
-compile_cf_template() {
-    log_header "Compiling CloudFormation template..."
-    
-    if [ ! -f "$CF_TEMPLATE_PATH" ]; then
-        log_error "CloudFormation template not found at: $CF_TEMPLATE_PATH"
-        return 1
-    fi
-    
-    log_info "Validating CloudFormation template..."
-    aws cloudformation validate-template --template-body file://$CF_TEMPLATE_PATH > /dev/null
-    
-    if [ $? -eq 0 ]; then
-        log_success "CloudFormation template is valid"
-        return 0
-    else
-        log_error "CloudFormation template validation failed"
-        return 1
-    fi
-}
-
-# Function to deploy CloudFormation stack
-deploy_stack() {
-    local stack_name=$1
-    local account_id=$(get_account_id)
-    local full_stack_name="${stack_name}-${account_id}-auth"
-    
-    log_header "Deploying CloudFormation stack: $full_stack_name"
-    
-    # Check if stack already exists
-    local existing_stack=$(aws cloudformation describe-stacks \
-        --stack-name "$full_stack_name" \
-        --query 'Stacks[0].StackName' \
-        --output text 2>/dev/null)
-    
-    if [ $? -eq 0 ] && [ -n "$existing_stack" ]; then
-        log_info "Stack '$full_stack_name' already exists, updating..."
-    else
-        log_info "Creating new stack '$full_stack_name'..."
-    fi
-    
-    # Start deployment
-    log_info "Initiating CloudFormation deployment..."
-    
-    # Create a temporary file to capture deployment output
-    local temp_file=$(mktemp)
-    
-    # Start deployment in background
-    (
-        aws cloudformation deploy \
-            --template-file "$CF_TEMPLATE_PATH" \
-            --stack-name "$full_stack_name" \
-            --parameter-overrides \
-                Environment="dev" \
-                ServiceName="$PROJECT_NAME" \
-                UserPoolName="${stack_name}-users" \
-            --capabilities CAPABILITY_IAM \
-            --no-fail-on-empty-changeset > "$temp_file" 2>&1
-        echo $? > "${temp_file}.exit_code"
-    ) &
-    
-    local deploy_pid=$!
-    
-    # Give deployment a moment to start
-    sleep 3
-    
-    # Start monitoring deployment progress with real-time events
-    log_info "Starting real-time CloudFormation event monitoring..."
-    monitor_stack_events "$full_stack_name" "deployment"
-    local monitor_result=$?
-    
-    # Wait for deployment to complete
-    wait $deploy_pid
-    local deploy_exit_code=$(cat "${temp_file}.exit_code" 2>/dev/null || echo "1")
-    
-    # Show deployment output if there were any messages
-    if [ -s "$temp_file" ]; then
-        echo ""
-        log_info "Deployment output:"
-        cat "$temp_file"
-    fi
-    
-    # Cleanup temporary files
-    rm -f "$temp_file" "${temp_file}.exit_code"
-    
-    # Check final result
-    if [ $deploy_exit_code -eq 0 ] && [ $monitor_result -eq 0 ]; then
-        echo ""
-        log_success "✅ Stack deployed successfully: $full_stack_name"
-        echo $full_stack_name
-        return 0
-    else
-        echo ""
-        log_error "❌ Failed to deploy stack"
-        return 1
-    fi
-}
-
-# Function to export environment config
-export_env_config() {
-    local stack_name=$1
-    
-    log_header "Exporting environment configuration..."
-    
-    # Get stack outputs
-    local user_pool_id=$(aws cloudformation describe-stacks \
-        --stack-name "$stack_name" \
-        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
-        --output text 2>/dev/null)
-    
-    local client_id=$(aws cloudformation describe-stacks \
-        --stack-name "$stack_name" \
-        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
-        --output text 2>/dev/null)
-    
-    local region=$(aws cloudformation describe-stacks \
-        --stack-name "$stack_name" \
-        --query 'Stacks[0].Outputs[?OutputKey==`Region`].OutputValue' \
-        --output text 2>/dev/null)
-    
-    if [ -z "$user_pool_id" ] || [ -z "$client_id" ] || [ -z "$region" ]; then
-        log_error "Failed to retrieve stack outputs"
-        return 1
-    fi
-    
-    # Get client secret
-    local client_secret=$(aws cognito-idp describe-user-pool-client \
-        --user-pool-id "$user_pool_id" \
-        --client-id "$client_id" \
-        --query 'UserPoolClient.ClientSecret' \
-        --output text 2>/dev/null)
-    
-    # Export environment variables
-    export AWS_COGNITO_REGION="$region"
-    export AWS_COGNITO_USER_POOL_ID="$user_pool_id"
-    export AWS_COGNITO_CLIENT_ID="$client_id"
-    export AWS_COGNITO_CLIENT_SECRET="$client_secret"
-    
-    log_success "Environment variables exported"
-    log_info "AWS_COGNITO_REGION=$AWS_COGNITO_REGION"
-    log_info "AWS_COGNITO_USER_POOL_ID=$AWS_COGNITO_USER_POOL_ID"
-    log_info "AWS_COGNITO_CLIENT_ID=$AWS_COGNITO_CLIENT_ID"
-    log_info "AWS_COGNITO_CLIENT_SECRET=***hidden***"
-    
-    return 0
-}
-
 # Function to check and kill busy ports
 check_and_kill_busy_ports() {
     log_header "Checking for busy ports..."
@@ -246,6 +107,51 @@ check_and_kill_busy_ports() {
         local port="${SERVICE_PORTS[$i]}"
         kill_port $port $service
     done
+}
+
+# Function to compile a single service
+compile_service() {
+    local service=$1
+    
+    if [ -z "$service" ]; then
+        log_error "Service name not provided"
+        return 1
+    fi
+    
+    # Validate service name
+            local valid_service=false
+    for valid in "${SERVICES[@]}"; do
+        if [ "$service" = "$valid" ]; then
+            valid_service=true
+            break
+        fi
+    done
+    
+    if [ "$valid_service" = false ]; then
+        log_error "Invalid service name: $service"
+        log_info "Valid services: ${SERVICES[*]}"
+        return 1
+    fi
+    
+    if [ -d "$service" ]; then
+        log_info "🔨 Compiling $service..."
+        cd "$service"
+        
+        # Run Maven clean compile with better output
+        if mvn clean compile -q > "../logs/${service}-compile.log" 2>&1; then
+            cd ..
+            log_success "✅ $service compiled successfully"
+            return 0
+        else
+            cd ..
+            log_error "❌ Failed to compile $service"
+            log_info "💡 Check logs/${service}-compile.log for details"
+            return 1
+        fi
+    else
+        log_error "Service directory $service not found"
+        return 1
+    fi
 }
 
 # Function to clean compile services
@@ -513,9 +419,10 @@ monitor_stack_events() {
     local stack_name=$1
     local operation=$2
     local last_event_time=""
+    local wait_count=0
+    local max_wait_for_stack=60  # Wait up to 5 minutes for stack to appear (5s * 60 = 300s)
     
     log_info "Monitoring CloudFormation events for $operation..."
-    echo ""
     
     while true; do
         # Check stack status
@@ -525,20 +432,37 @@ monitor_stack_events() {
             --output text 2>/dev/null)
         
         if [ $? -ne 0 ]; then
-            # Stack no longer exists (successful deletion) or error
+            # Stack doesn't exist yet or error occurred
             if [ "$operation" = "deletion" ]; then
                 log_success "Stack successfully deleted!"
-                break
+                return 0
+            elif [ "$operation" = "deployment" ]; then
+                # For deployment, wait for stack to appear
+                wait_count=$((wait_count + 1))
+                if [ $wait_count -le $max_wait_for_stack ]; then
+                    sleep 5
+                    continue
+                else
+                    log_warning "Stack not visible in CloudFormation yet. Deployment may still be in progress."
+                    return 0  # Don't fail, just exit monitoring
+                fi
             else
                 log_error "Error monitoring stack or stack not found"
-                break
+                return 1
             fi
         fi
         
-        # Get recent events
+        # Reset wait counter once stack is found
+        if [ $wait_count -gt 0 ]; then
+            log_info "Stack found! Monitoring events..."
+            wait_count=0
+        fi
+        
+        # Get recent events (simplified query)
         local events=$(aws cloudformation describe-stack-events \
             --stack-name "$stack_name" \
-            --query 'StackEvents[?Timestamp>`2025-09-01T00:00:00.000Z`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
+            --max-items 5 \
+            --query 'StackEvents[].{Time:Timestamp,Resource:LogicalResourceId,Status:ResourceStatus}' \
             --output table 2>/dev/null)
         
         if [ $? -eq 0 ]; then
@@ -550,12 +474,8 @@ monitor_stack_events() {
             
             # Only show new events
             if [ "$latest_event" != "$last_event_time" ]; then
-                clear
-                echo -e "${PURPLE}🔄 CloudFormation Stack $operation Progress${NC}"
-                echo "Stack: $stack_name"
-                echo "Status: $stack_status"
                 echo ""
-                echo "Recent Events:"
+                echo "� CloudFormation Status: $stack_status"
                 echo "$events"
                 last_event_time="$latest_event"
             fi
@@ -585,7 +505,7 @@ monitor_stack_events() {
                 ;;
         esac
         
-        sleep 5
+        sleep 10  # Check every 10 seconds instead of 5
     done
 }
 
@@ -635,201 +555,369 @@ delete_stack() {
 
 # Function to show help
 show_help() {
-    echo -e "${PURPLE}🚀 Spring Microservices Management Script v2.0${NC}"
+    echo -e "${PURPLE}🚀 Spring Microservices CloudFormation Deployment Script${NC}"
     echo ""
-    echo "Usage: $0 {command} [options]"
+    echo "Usage: $0 <command> [options]"
     echo ""
     echo "📋 Available Commands:"
     echo "====================="
     echo ""
-    echo -e "${CYAN}run${NC}                    - Full deployment and service startup"
-    echo "                         • Compile CloudFormation template"
-    echo "                         • Prompt for stack name"
-    echo "                         • Deploy with format: STACKNAME-ACCOUNTID-auth"
-    echo "                         • Export environment config"
-    echo "                         • Check and kill busy ports"
-    echo "                         • Clean compile all services"
-    echo "                         • Start services in order"
-    echo "                         • Test health endpoints"
+    echo -e "${CYAN}deploy${NC}                 - Deploy CloudFormation stack"
+    echo "                         • Validates CloudFormation template"
+    echo "                         • Prompts for stack name"
+    echo "                         • Deploys with format: STACKNAME-ACCOUNTID-auth"
+    echo "                         • Exports environment variables"
     echo ""
-    echo -e "${CYAN}deploy${NC}                 - Deploy CloudFormation stack only"
-    echo "                         • Compile CloudFormation template"
-    echo "                         • Prompt for stack name"
-    echo "                         • Deploy with format: STACKNAME-ACCOUNTID-auth"
-    echo "                         • Export environment config"
+    echo -e "${CYAN}start [service-name]${NC}   - Start specific service or all services"
+    echo "                         • start                   - Start all services in order"
+    echo "                         • start auth              - Start auth service only"
+    echo "                         • Kills busy ports before starting"
     echo ""
-    echo -e "${CYAN}delete${NC}                 - Delete stack and cleanup"
-    echo "                         • Stop all services"
-    echo "                         • Force kill if needed"
-    echo "                         • Clear environment variables"
-    echo "                         • Delete CloudFormation stack"
+    echo -e "${CYAN}stop [service-name]${NC}    - Stop specific service or all services"
+    echo "                         • stop                    - Stop all services"
+    echo "                         • stop auth               - Stop auth service"
+    echo "                         • Kills process on service port"
     echo ""
-    echo -e "${CYAN}restart [service]${NC}      - Restart specific service"
-    echo "                         • Clean compile before restart"
-    echo "                         • Available services: ${SERVICES[*]}"
+    echo -e "${CYAN}restart [service-name]${NC} - Restart specific service or all services"
+    echo "                         • restart                 - Restart all services"
+    echo "                         • restart auth            - Restart auth service only"
+    echo "                         • Includes compilation step"
     echo ""
-    echo -e "${CYAN}stop [service]${NC}         - Stop specific service"
-    echo "                         • Available services: ${SERVICES[*]}"
-    echo "                         • Use 'stop all' to stop all services"
+    echo -e "${CYAN}start-service <name>${NC}   - Start specific service (alias for start)"
+    echo -e "${CYAN}stop-service <name>${NC}    - Stop specific service (alias for stop)"
+    echo -e "${CYAN}restart-service${NC}        - Restart all services (alias for restart)"
     echo ""
-    echo -e "${CYAN}status${NC}                 - Show service status and URLs"
+    echo -e "${CYAN}status${NC}                 - Show status of all services"
+    echo "                         • Shows running/stopped status"
+    echo "                         • Lists service URLs and health endpoints"
     echo ""
-    echo -e "${CYAN}help${NC}                   - Show this help message"
+    echo "Stack Naming Convention:"
+    echo "======================="
+    echo "  Input stack name: my-shop"
+    echo "  AWS Account ID: 123456789012"
+    echo "  Final stack name: my-shop-123456789012-auth"
+    echo "  User Pool name: my-shop-users"
     echo ""
-    echo "📦 Service Information:"
-    echo "======================"
-    for i in "${!SERVICES[@]}"; do
-        echo "  ${SERVICES[$i]}: port ${SERVICE_PORTS[$i]}"
-    done
+    echo "Environment Variables Exported:"
+    echo "=============================="
+    echo "  AWS_COGNITO_REGION"
+    echo "  AWS_COGNITO_USER_POOL_ID"
+    echo "  AWS_COGNITO_CLIENT_ID"
+    echo "  AWS_COGNITO_CLIENT_SECRET"
     echo ""
-    echo "🌐 Health Check Endpoints:"
-    echo "========================="
-    echo "  All health checks are accessible via: http://localhost:8080/api/v1/<service>/actuator/health"
-    echo "  Exception: Service Registry: http://localhost:8761/actuator/health"
+    echo "  Variables are saved to .env.cognito file"
+    echo "  Load them with: source .env.cognito"
+    echo ""
+    echo "Available Services:"
+    echo "=================="
+    echo "  service-registry, api-gateway, auth, admin, client"
+    echo ""
+    echo "Service Startup Order:"
+    echo "====================="
+    echo "  1. service-registry (Port 8761)"
+    echo "  2. api-gateway (Port 8080)"
+    echo "  3. auth (Port 8082)"
+    echo "  4. admin (Port 8083)"
+    echo "  5. client (Port 8084)"
     echo ""
     echo "Examples:"
-    echo "========="
-    echo "  $0 run                    # Full deployment and startup"
-    echo "  $0 deploy                 # Deploy CloudFormation only"
-    echo "  $0 restart auth           # Restart auth service"
-    echo "  $0 stop client            # Stop client service"
-    echo "  $0 stop all               # Stop all services"
-    echo "  $0 status                 # Check service status"
-    echo "  $0 delete                 # Delete everything"
+    echo "========"
+    echo "  $0 deploy                     # Deploy CloudFormation stack"
+    echo "  $0 start                      # Start all services in order"
+    echo "  $0 start auth                 # Start only auth service"
+    echo "  $0 stop                       # Stop all services"
+    echo "  $0 stop auth                  # Stop auth service"
+    echo "  $0 restart                    # Restart all services"
+    echo "  $0 restart auth               # Restart only auth service"
+    echo "  $0 status                     # Check service status"
 }
 
 # Main script logic
 case "$1" in
-    "run")
-        log_header "🚀 Starting full deployment and service startup..."
-        
-        # Compile CloudFormation template
-        log_info "📋 Compiling CloudFormation template..."
-        compile_cf_template || exit 1
-        
-        # Ask for stack name
-        stack_name=$(prompt_stack_name)
-        account_id=$(get_account_id)
-        full_stack_name="${stack_name}-${account_id}-auth"
-        
-        # Deploy stack with enhanced monitoring
-        log_info "☁️  Deploying AWS Cognito infrastructure..."
-        deployed_stack=$(deploy_stack $stack_name)
-        if [ $? -ne 0 ]; then
-            log_error "Infrastructure deployment failed. Aborting service startup."
-            exit 1
-        fi
-        
-        # Export environment config
-        log_info "⚙️  Configuring environment variables..."
-        export_env_config $deployed_stack || exit 1
-        
-        # Check and kill busy ports
-        log_info "🔍 Checking for port conflicts..."
-        check_and_kill_busy_ports
-        
-        # Clean compile all services
-        log_info "🔨 Building all microservices..."
-        clean_compile_services || exit 1
-        
-        # Start all services in order
-        log_info "🎯 Starting all services..."
-        start_all_services
-        
-        # Test health endpoints
-        log_info "🏥 Waiting for services to initialize..."
-        sleep 10
-        log_info "🔍 Testing service health endpoints..."
-        test_health_endpoints
-        
-        echo ""
-        log_success "🎉 Full deployment completed successfully!"
-        echo ""
-        log_info "📊 Current System Status:"
-        show_status
-        ;;
-        
     "deploy")
         log_header "☁️  Deploying CloudFormation Infrastructure..."
         
         # Compile CloudFormation template
-        log_info "📋 Compiling CloudFormation template..."
-        compile_cf_template || exit 1
+        log_info "📋 Validating CloudFormation template..."
+        if [ ! -f "$CF_TEMPLATE_PATH" ]; then
+            log_error "CloudFormation template not found at: $CF_TEMPLATE_PATH"
+            exit 1
+        fi
+        
+        aws cloudformation validate-template --template-body file://$CF_TEMPLATE_PATH > /dev/null
+        if [ $? -ne 0 ]; then
+            log_error "CloudFormation template validation failed"
+            exit 1
+        fi
+        log_success "CloudFormation template is valid"
         
         # Ask for stack name
         stack_name=$(prompt_stack_name)
         account_id=$(get_account_id)
+        full_stack_name="${stack_name}-${account_id}-auth"
         
-        # Deploy stack with enhanced monitoring
-        log_info "🚀 Starting AWS Cognito infrastructure deployment..."
-        deployed_stack=$(deploy_stack $stack_name)
-        if [ $? -ne 0 ]; then
-            log_error "❌ Infrastructure deployment failed"
+        log_info "🚀 Deploying stack: $full_stack_name"
+        
+        # Deploy CloudFormation stack
+        aws cloudformation deploy \
+            --template-file "$CF_TEMPLATE_PATH" \
+            --stack-name "$full_stack_name" \
+            --parameter-overrides \
+                Environment="dev" \
+                ServiceName="$PROJECT_NAME" \
+                UserPoolName="${stack_name}-users" \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+        
+        if [ $? -eq 0 ]; then
+            log_success "✅ Stack deployed successfully: $full_stack_name"
+            
+            # Export environment variables
+            log_info "⚙️  Exporting environment variables..."
+            
+            # Get stack outputs
+            user_pool_id=$(aws cloudformation describe-stacks \
+                --stack-name "$full_stack_name" \
+                --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+                --output text 2>/dev/null)
+            
+            client_id=$(aws cloudformation describe-stacks \
+                --stack-name "$full_stack_name" \
+                --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' \
+                --output text 2>/dev/null)
+            
+            region=$(aws cloudformation describe-stacks \
+                --stack-name "$full_stack_name" \
+                --query 'Stacks[0].Outputs[?OutputKey==`Region`].OutputValue' \
+                --output text 2>/dev/null)
+            
+            if [ -n "$user_pool_id" ] && [ -n "$client_id" ] && [ -n "$region" ]; then
+                # Get client secret
+                client_secret=$(aws cognito-idp describe-user-pool-client \
+                    --user-pool-id "$user_pool_id" \
+                    --client-id "$client_id" \
+                    --query 'UserPoolClient.ClientSecret' \
+                    --output text 2>/dev/null)
+                
+                # Create environment variables file
+                env_file=".env.cognito"
+                cat > "$env_file" << EOF
+# AWS Cognito Environment Variables
+# Generated on $(date)
+# Stack: $full_stack_name
+
+export AWS_COGNITO_REGION="$region"
+export AWS_COGNITO_USER_POOL_ID="$user_pool_id"
+export AWS_COGNITO_CLIENT_ID="$client_id"
+export AWS_COGNITO_CLIENT_SECRET="$client_secret"
+EOF
+                
+                # Also export to current session
+                export AWS_COGNITO_REGION="$region"
+                export AWS_COGNITO_USER_POOL_ID="$user_pool_id"
+                export AWS_COGNITO_CLIENT_ID="$client_id"
+                export AWS_COGNITO_CLIENT_SECRET="$client_secret"
+                
+                log_success "Environment variables exported successfully!"
+                echo ""
+                log_info "📊 Stack Information:"
+                echo "   Stack Name: $full_stack_name"
+                echo "   Region: $region"
+                echo "   Account: $account_id"
+                echo "   User Pool ID: $user_pool_id"
+                echo "   Client ID: $client_id"
+                echo "   Client Secret: ***hidden***"
+                echo ""
+                log_info "💡 Environment variables saved to: $env_file"
+                log_info "   To load in new shell sessions, run: source $env_file"
+                echo ""
+                log_warning "⚠️  Keep the $env_file file secure as it contains sensitive credentials!"
+            else
+                log_error "Failed to retrieve stack outputs"
+                exit 1
+            fi
+        else
+            log_error "❌ Stack deployment failed"
+            exit 1
+        fi
+        ;;
+        
+    "start-service")
+        if [ -z "$2" ]; then
+            log_error "Service name required"
+            echo "Available services: ${SERVICES[*]}"
             exit 1
         fi
         
-        # Export environment config
-        log_info "⚙️  Configuring environment variables..."
-        export_env_config $deployed_stack || exit 1
+        # Validate service name
+        service_found=false
+        service_port=""
+        for i in "${!SERVICES[@]}"; do
+            if [ "${SERVICES[$i]}" = "$2" ]; then
+                service_found=true
+                service_port="${SERVICE_PORTS[$i]}"
+                break
+            fi
+        done
         
-        echo ""
-        log_success "🎉 Infrastructure deployment completed successfully!"
-        echo ""
-        log_info "📊 Stack Information:"
-        echo "   Stack Name: $deployed_stack"
-        echo "   Region: $(aws configure get region)"
-        echo "   Account: $account_id"
+        if [ "$service_found" = false ]; then
+            log_error "Unknown service: $2"
+            echo "Available services: ${SERVICES[*]}"
+            exit 1
+        fi
+        
+        log_header "Starting $2..."
+        
+        # Kill port if busy
+        kill_port $service_port $2
+        
+        # Start the service
+        start_service $2 $service_port
         ;;
         
-    "delete")
-        log_header "Deleting stack and cleaning up..."
+    "stop-service"|"stop")
+        if [ -z "$2" ]; then
+            # Stop all services when no service name provided
+            stop_all_services
+            exit 0
+        fi
         
-        # Stop all services
+        # Validate service name
+        service_found=false
+        for service in "${SERVICES[@]}"; do
+            if [ "$service" = "$2" ]; then
+                service_found=true
+                break
+            fi
+        done
+        
+        if [ "$service_found" = false ]; then
+            log_error "Unknown service: $2"
+            echo "Available services: ${SERVICES[*]}"
+            exit 1
+        fi
+        
+        stop_service $2
+        ;;
+        
+    "restart"|"start")
+        if [ "$1" = "start" ] && [ -z "$2" ]; then
+            # Start all services in order
+            log_header "Starting all services in order..."
+            
+            # Source environment variables if available
+            if [ -f ".env.cognito" ]; then
+                log_info "Loading Cognito environment variables..."
+                source .env.cognito
+                log_success "Environment variables loaded"
+            else
+                log_warning "No .env.cognito file found. Run './local-run.sh deploy' first to set up AWS Cognito."
+            fi
+            
+            start_all_services
+            
+        elif [ "$1" = "restart" ] && [ -z "$2" ]; then
+            # Restart all services
+            log_header "Restarting all services..."
+            
+            # Stop all services first
+            stop_all_services
+            
+            # Source environment variables if available
+            if [ -f ".env.cognito" ]; then
+                log_info "Loading Cognito environment variables..."
+                source .env.cognito
+                log_success "Environment variables loaded"
+            else
+                log_warning "No .env.cognito file found. Run './local-run.sh deploy' first to set up AWS Cognito."
+            fi
+            
+            # Clean compile all services
+            clean_compile_services
+            
+            # Start all services
+            start_all_services
+            
+        else
+            # Single service restart/start
+            if [ -z "$2" ]; then
+                log_error "Service name required"
+                echo "Available services: ${SERVICES[*]}"
+                exit 1
+            fi
+            
+            # Validate service name
+            service_found=false
+            service_port=""
+            for i in "${!SERVICES[@]}"; do
+                if [ "${SERVICES[$i]}" = "$2" ]; then
+                    service_found=true
+                    service_port="${SERVICE_PORTS[$i]}"
+                    break
+                fi
+            done
+            
+            if [ "$service_found" = false ]; then
+                log_error "Unknown service: $2"
+                echo "Available services: ${SERVICES[*]}"
+                exit 1
+            fi
+            
+            if [ "$1" = "restart" ]; then
+                restart_service $2
+            else
+                # Start single service
+                log_header "Starting $2..."
+                
+                # Kill port if busy
+                kill_port $service_port $2
+                
+                # Source environment variables if available and service is auth
+                if [ "$2" = "auth" ] && [ -f ".env.cognito" ]; then
+                    log_info "Loading Cognito environment variables for auth service..."
+                    source .env.cognito
+                fi
+                
+                # Start the service
+                start_service $2 $service_port
+            fi
+        fi
+        ;;
+        
+    "restart-service")
+        log_header "Restarting all services..."
+        
+        # Stop all services first
         stop_all_services
         
-        # Clear environment variables
-        clear_env_vars
-        
-        # Ask for stack name to delete
-        stack_name=$(prompt_stack_name)
-        account_id=$(get_account_id)
-        full_stack_name="${stack_name}-${account_id}-auth"
-        
-        # Delete stack
-        delete_stack $full_stack_name
-        
-        log_success "Cleanup completed!"
-        ;;
-        
-    "restart")
-        if [ "$2" = "all" ]; then
-            stop_all_services
-            clean_compile_services
-            start_all_services
-            log_success "All services restarted!"
+        # Source environment variables if available
+        if [ -f ".env.cognito" ]; then
+            log_info "Loading Cognito environment variables..."
+            source .env.cognito
+            log_success "Environment variables loaded"
         else
-            restart_service $2
+            log_warning "No .env.cognito file found. Run './local-run.sh deploy' first to set up AWS Cognito."
         fi
-        ;;
         
-    "stop")
-        if [ "$2" = "all" ] || [ -z "$2" ]; then
-            stop_all_services
-        else
-            stop_service $2
-        fi
+        # Clean compile all services
+        clean_compile_services
+        
+        # Start all services
+        start_all_services
         ;;
         
     "status")
         show_status
         ;;
         
-    "help"|"-h"|"--help")
+    "help"|"-h"|"--help"|"")
         show_help
         ;;
         
     *)
         log_error "Unknown command: ${1:-<none>}"
+        echo ""
+        echo "Available commands: deploy, start, stop, restart, start-service, stop-service, restart-service, status"
         echo ""
         show_help
         exit 1

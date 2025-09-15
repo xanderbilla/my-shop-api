@@ -6,6 +6,7 @@ import com.shop.auth.dto.SigninRequest;
 import com.shop.auth.dto.SignupRequest;
 import com.shop.auth.dto.VerifyRequest;
 import com.shop.auth.enums.UserRole;
+import com.shop.auth.enums.UserStatus;
 import com.shop.auth.model.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,13 +32,8 @@ public class AuthService {
 
     public User signup(SignupRequest request) {
         try {
-            // Validate that username is not the same as email or part of email
-            String emailPrefix = request.getEmail().split("@")[0];
-            if (request.getUsername().equals(request.getEmail()) ||
-                    request.getUsername().equals(emailPrefix) ||
-                    request.getEmail().contains(request.getUsername())) {
-                throw new RuntimeException("Username cannot be the same as email or part of email");
-            }
+            // Improved username validation
+            validateUsername(request.getUsername(), request.getEmail());
 
             // Create user attributes
             Map<String, String> userAttributes = new HashMap<>();
@@ -73,13 +69,14 @@ public class AuthService {
 
             SignUpResponse signUpResponse = cognitoClient.signUp(signUpBuilder.build());
 
-            return User.builder()
-                    .username(request.getUsername()) // Keep the custom username in our system
-                    .name(request.getName())
-                    .email(request.getEmail())
-                    .isVerified(false) // User needs to verify email
-                    .roles(List.of(request.getRole())) // Convert single role to list
-                    .build();
+            return createUserWithDefaultStatus(
+                    signUpResponse.userSub(), // Set the Cognito UUID as userId
+                    request.getUsername(), // Keep the custom username in our system
+                    request.getName(),
+                    request.getEmail(),
+                    false, // User needs to verify email
+                    List.of(request.getRole()) // Convert single role to list
+            );
 
         } catch (CognitoIdentityProviderException e) {
             throw new RuntimeException("Failed to create user: " + e.awsErrorDetails().errorMessage());
@@ -124,13 +121,7 @@ public class AuthService {
             User user = getUserInfo(userEmail);
 
             // Replace the email with the custom username in the response
-            User userWithCustomUsername = User.builder()
-                    .username(request.getUsername()) // Use custom username instead of email
-                    .name(user.getName())
-                    .email(user.getEmail())
-                    .isVerified(user.isVerified())
-                    .roles(user.getRoles())
-                    .build();
+            User userWithCustomUsername = createUserBasedOnExisting(user, request.getUsername());
 
             return new AuthResponse(
                     authResponse.authenticationResult().accessToken(),
@@ -168,13 +159,7 @@ public class AuthService {
 
             // Get user info and replace email with custom username
             User user = getUserInfo(userEmail);
-            return User.builder()
-                    .username(request.getUsername()) // Use custom username instead of email
-                    .name(user.getName())
-                    .email(user.getEmail())
-                    .isVerified(user.isVerified())
-                    .roles(user.getRoles())
-                    .build();
+            return createUserBasedOnExisting(user, request.getUsername());
 
         } catch (CognitoIdentityProviderException e) {
             throw new RuntimeException("Verification failed: " + e.awsErrorDetails().errorMessage());
@@ -197,10 +182,14 @@ public class AuthService {
             String email = null;
             String preferredUsername = null;
             String roleStr = null;
+            String userSub = null; // Cognito UUID
             boolean isVerified = getUserResponse.userStatus() == UserStatusType.CONFIRMED;
 
             for (AttributeType attribute : getUserResponse.userAttributes()) {
                 switch (attribute.name()) {
+                    case "sub":
+                        userSub = attribute.value(); // This is the actual UUID
+                        break;
                     case "name":
                         name = attribute.value();
                         break;
@@ -212,6 +201,11 @@ public class AuthService {
                         break;
                     case "custom:role":
                         roleStr = attribute.value();
+                        break;
+                    case "custom:username":
+                        if (preferredUsername == null) { // Use custom username if preferred_username is not set
+                            preferredUsername = attribute.value();
+                        }
                         break;
                     case "role": // Also check for 'role' attribute without custom prefix
                         if (roleStr == null) { // Only use if custom:role wasn't found
@@ -251,14 +245,14 @@ public class AuthService {
                 }
             }
 
-            return User.builder()
-                    .userId(username) // Store Cognito UUID as userId
-                    .username(displayUsername) // Store user-friendly username
-                    .name(name)
-                    .email(email)
-                    .isVerified(isVerified)
-                    .roles(roles) // Use the multiple roles list
-                    .build();
+            return createUserWithDefaultStatus(
+                    userSub, // Store actual Cognito UUID as userId
+                    displayUsername, // Store user-friendly username
+                    name,
+                    email,
+                    isVerified,
+                    roles // Use the multiple roles list
+            );
 
         } catch (CognitoIdentityProviderException e) {
             throw new RuntimeException("Failed to get user info: " + e.awsErrorDetails().errorMessage());
@@ -369,13 +363,7 @@ public class AuthService {
             User user = getUserInfo(actualCognitoUsername);
 
             // Replace the Cognito UUID with the custom username in the response
-            return User.builder()
-                    .username(customUsername) // Use custom username instead of UUID
-                    .name(user.getName())
-                    .email(user.getEmail())
-                    .isVerified(user.isVerified())
-                    .roles(user.getRoles())
-                    .build();
+            return createUserBasedOnExisting(user, customUsername);
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to get user info: " + e.getMessage());
@@ -391,13 +379,7 @@ public class AuthService {
             String customUsername = findCustomUsernameByEmail(email);
 
             // Replace the Cognito UUID/email with the custom username in the response
-            return User.builder()
-                    .username(customUsername) // Use custom username instead of email/UUID
-                    .name(user.getName())
-                    .email(user.getEmail())
-                    .isVerified(user.isVerified())
-                    .roles(user.getRoles())
-                    .build();
+            return createUserBasedOnExisting(user, customUsername);
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to get user info: " + e.getMessage());
@@ -622,5 +604,115 @@ public class AuthService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to change password: " + e.getMessage());
         }
+    }
+
+    /**
+     * Validate username according to business rules:
+     * - Cannot be a complete email address (containing @)
+     * - Cannot start with a number
+     * - Cannot be only numbers
+     * - Must be at least 3 characters long
+     * - Can contain letters, numbers, underscores, and hyphens
+     * - CAN be the same as email prefix (e.g., "xyz" from "xyz@example.com")
+     * - Cannot be exactly the same as the full email address
+     */
+    private void validateUsername(String username, String email) {
+        if (username == null || username.trim().isEmpty()) {
+            throw new RuntimeException("Username cannot be empty");
+        }
+
+        // Remove leading/trailing spaces
+        username = username.trim();
+
+        // Cannot be exactly the same as the full email
+        if (username.equals(email)) {
+            throw new RuntimeException("Username cannot be the same as your email address");
+        }
+
+        // Cannot be a complete email (contains @)
+        if (username.contains("@")) {
+            throw new RuntimeException("Username cannot be an email address");
+        }
+
+        // Cannot start with a number
+        if (Character.isDigit(username.charAt(0))) {
+            throw new RuntimeException("Username cannot start with a number");
+        }
+
+        // Cannot be only numbers
+        if (username.matches("^\\d+$")) {
+            throw new RuntimeException("Username cannot be only numbers");
+        }
+
+        // Must be at least 3 characters
+        if (username.length() < 3) {
+            throw new RuntimeException("Username must be at least 3 characters long");
+        }
+
+        // Can only contain letters, numbers, underscores, and hyphens
+        if (!username.matches("^[a-zA-Z][a-zA-Z0-9_-]*$")) {
+            throw new RuntimeException(
+                    "Username can only contain letters, numbers, underscores, and hyphens, and must start with a letter");
+        }
+
+        // Username CAN be the same as email prefix - this is explicitly allowed
+        // For example: username "xyz" with email "xyz@example.com" is valid
+    }
+
+    // ===============================
+    // UTILITY METHODS (Reusable)
+    // ===============================
+
+    /**
+     * Safely gets user status with default fallback
+     * 
+     * @param user User object that may have null status
+     * @return UserStatus, defaulting to ACTIVE if null
+     */
+    private UserStatus getStatusOrDefault(User user) {
+        return user.getStatus() != null ? user.getStatus() : UserStatus.ACTIVE;
+    }
+
+    /**
+     * Creates a User with default ACTIVE status
+     * 
+     * @param userId     User ID
+     * @param username   Username
+     * @param name       Display name
+     * @param email      Email address
+     * @param isVerified Verification status
+     * @param roles      User roles
+     * @return User object with default ACTIVE status
+     */
+    private User createUserWithDefaultStatus(String userId, String username, String name,
+            String email, boolean isVerified, List<UserRole> roles) {
+        return User.builder()
+                .userId(userId)
+                .username(username)
+                .name(name)
+                .email(email)
+                .isVerified(isVerified)
+                .roles(roles)
+                .status(UserStatus.ACTIVE)
+                .build();
+    }
+
+    /**
+     * Creates a User based on existing User but with potentially updated fields
+     * 
+     * @param existingUser Existing user to copy from
+     * @param username     New username (or null to keep existing)
+     * @return User object with preserved status or default ACTIVE
+     */
+    private User createUserBasedOnExisting(User existingUser, String username) {
+        return User.builder()
+                .userId(existingUser.getUserId())
+                .username(username != null ? username : existingUser.getUsername())
+                .name(existingUser.getName())
+                .email(existingUser.getEmail())
+                .isVerified(existingUser.isVerified())
+                .roles(existingUser.getRoles())
+                .status(getStatusOrDefault(existingUser))
+                .build();
     }
 }
