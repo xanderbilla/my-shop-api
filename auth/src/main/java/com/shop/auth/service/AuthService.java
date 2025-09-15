@@ -8,7 +8,6 @@ import com.shop.auth.dto.VerifyRequest;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.enums.UserStatus;
 import com.shop.auth.model.User;
-import com.shop.auth.service.UserProfileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
@@ -714,6 +713,41 @@ public class AuthService {
                 .roles(roles)
                 .status(UserStatus.ACTIVE)
                 .build();
+    }
+
+    /**
+     * Refresh access token using refresh token
+     */
+    public AuthResponse refreshToken(String refreshToken, String username) {
+        try {
+            Map<String, String> authParams = new HashMap<>();
+            authParams.put("REFRESH_TOKEN", refreshToken);
+
+            // For refresh token, we need SECRET_HASH if client secret is configured
+            if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
+                authParams.put("SECRET_HASH", calculateSecretHash(username));
+            }
+
+            InitiateAuthRequest authRequest = InitiateAuthRequest.builder()
+                    .clientId(cognitoConfig.getClientId())
+                    .authFlow(AuthFlowType.REFRESH_TOKEN_AUTH)
+                    .authParameters(authParams)
+                    .build();
+
+            InitiateAuthResponse authResponse = cognitoClient.initiateAuth(authRequest);
+
+            // For refresh token, we typically don't need to fetch user details again
+            // Return response with tokens only (user will be null)
+            return new AuthResponse(
+                    authResponse.authenticationResult().accessToken(),
+                    authResponse.authenticationResult().refreshToken() != null
+                            ? authResponse.authenticationResult().refreshToken()
+                            : refreshToken, // Keep original refresh token if new one not provided
+                    null); // User not included in refresh response
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to refresh token: " + e.getMessage(), e);
+        }
     }
 
     /**

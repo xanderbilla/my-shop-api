@@ -5,6 +5,9 @@ import com.shop.auth.exception.InvalidTokenException;
 import com.shop.auth.model.User;
 import com.shop.auth.service.AuthService;
 import com.shop.auth.service.JwtTokenService;
+import com.shop.auth.util.CookieUtil;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,6 +20,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtTokenService jwtTokenService;
+    private final CookieUtil cookieUtil;
 
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<User>> signup(@Valid @RequestBody SignupRequest request) {
@@ -29,13 +33,24 @@ public class AuthController {
     }
 
     @PostMapping("/signin")
-    public ResponseEntity<ApiResponse<AuthResponse>> signin(@Valid @RequestBody SigninRequest request) {
+    public ResponseEntity<ApiResponse<AuthSuccessResponse>> signin(
+            @Valid @RequestBody SigninRequest request,
+            HttpServletResponse response) {
         AuthResponse authResponse = authService.signin(request);
 
-        ApiResponse<AuthResponse> response = ApiResponse.success(
+        // Set tokens in HTTP-only cookies
+        cookieUtil.setAccessTokenCookie(response, authResponse.getAccessToken());
+        cookieUtil.setRefreshTokenCookie(response, authResponse.getRefreshToken());
+
+        // Return success response without tokens
+        AuthSuccessResponse successResponse = AuthSuccessResponse.success(
+                authResponse.getUser(),
+                "User signed in successfully");
+
+        ApiResponse<AuthSuccessResponse> response_ = ApiResponse.success(
                 "User signed in successfully",
-                authResponse);
-        return ResponseEntity.ok(response);
+                successResponse);
+        return ResponseEntity.ok(response_);
     }
 
     @PostMapping("/verify")
@@ -49,10 +64,12 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<ApiResponse<User>> getCurrentUser(
-            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public ResponseEntity<ApiResponse<User>> getCurrentUser(HttpServletRequest request) {
+        // Get token from cookie instead of Authorization header
+        String token = cookieUtil.getAccessTokenFromCookies(request)
+                .orElseThrow(() -> new RuntimeException("Authentication required"));
 
-        User user = validateTokenAndGetUser(authHeader);
+        User user = validateTokenAndGetUser("Bearer " + token);
 
         ApiResponse<User> response = ApiResponse.success(
                 "User information retrieved successfully",
@@ -61,21 +78,72 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<String>> logout(
-            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public ResponseEntity<ApiResponse<String>> logout(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            // Get token from cookie for Cognito logout
+            String token = cookieUtil.getAccessTokenFromCookies(request).orElse(null);
 
-        String token = validateAndExtractToken(authHeader);
+            if (token != null) {
+                // Logout from Cognito
+                authService.logout(token);
 
-        // Logout from Cognito
-        authService.logout(token);
+                // Blacklist the token
+                jwtTokenService.blacklistToken(token);
+            }
 
-        // Blacklist the token
-        jwtTokenService.blacklistToken(token);
+            // Clear authentication cookies
+            cookieUtil.clearAuthCookies(response);
 
-        ApiResponse<String> response = ApiResponse.success(
-                "User logged out successfully",
-                "LOGGED_OUT");
-        return ResponseEntity.ok(response);
+            ApiResponse<String> apiResponse = ApiResponse.success(
+                    "User logged out successfully",
+                    "LOGGED_OUT");
+            return ResponseEntity.ok(apiResponse);
+        } catch (Exception e) {
+            // Even if logout fails, clear cookies
+            cookieUtil.clearAuthCookies(response);
+
+            ApiResponse<String> apiResponse = ApiResponse.success(
+                    "Logged out successfully",
+                    "LOGGED_OUT");
+            return ResponseEntity.ok(apiResponse);
+        }
+    }
+
+    @PostMapping("/refresh-token")
+    public ResponseEntity<ApiResponse<String>> refreshToken(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            // Get both access and refresh tokens from cookies
+            String refreshToken = cookieUtil.getRefreshTokenFromCookies(request)
+                    .orElseThrow(() -> new RuntimeException("Refresh token not found"));
+
+            String accessToken = cookieUtil.getAccessTokenFromCookies(request)
+                    .orElseThrow(() -> new RuntimeException("Access token not found"));
+
+            // Extract username from access token for secret hash calculation
+            String username = jwtTokenService.extractUsernameFromToken(accessToken);
+
+            // Call auth service to refresh tokens
+            AuthResponse authResponse = authService.refreshToken(refreshToken, username);
+
+            // Set new tokens in cookies
+            cookieUtil.setAccessTokenCookie(response, authResponse.getAccessToken());
+            if (authResponse.getRefreshToken() != null) {
+                cookieUtil.setRefreshTokenCookie(response, authResponse.getRefreshToken());
+            }
+
+            // Return success response
+            ApiResponse<String> apiResponse = ApiResponse.success(
+                    "Token refreshed successfully",
+                    "TOKEN_REFRESHED");
+            return ResponseEntity.ok(apiResponse);
+
+        } catch (Exception e) {
+            // Clear cookies on refresh failure
+            cookieUtil.clearAuthCookies(response);
+
+            ApiResponse<String> apiResponse = ApiResponse.error("Failed to refresh token: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(apiResponse);
+        }
     }
 
     @PostMapping("/forgot-password")
@@ -124,10 +192,13 @@ public class AuthController {
     }
 
     @GetMapping("/roles")
-    public ResponseEntity<ApiResponse<GetRoleResponse>> getUserRoles(
-            @RequestHeader("Authorization") String authorizationHeader) {
+    public ResponseEntity<ApiResponse<GetRoleResponse>> getUserRoles(HttpServletRequest request) {
         try {
-            User user = validateTokenAndGetUser(authorizationHeader);
+            // Get token from cookie instead of Authorization header
+            String token = cookieUtil.getAccessTokenFromCookies(request)
+                    .orElseThrow(() -> new RuntimeException("Authentication required"));
+
+            User user = validateTokenAndGetUser("Bearer " + token);
             GetRoleResponse roleResponse = new GetRoleResponse(user.getUsername(), user.getEmail(), user.getRoles());
 
             ApiResponse<GetRoleResponse> response = ApiResponse.success(
@@ -145,13 +216,16 @@ public class AuthController {
 
     @PostMapping("/change-password")
     public ResponseEntity<ApiResponse<String>> changePassword(
-            @RequestHeader("Authorization") String authorizationHeader,
-            @Valid @RequestBody ChangePasswordRequest request) {
+            HttpServletRequest request,
+            @Valid @RequestBody ChangePasswordRequest request1) {
         try {
-            String token = validateAndExtractToken(authorizationHeader);
+            // Get token from cookie instead of Authorization header
+            String token = cookieUtil.getAccessTokenFromCookies(request)
+                    .orElseThrow(() -> new RuntimeException("Authentication required"));
+
             String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
 
-            authService.changePassword(cognitoUsername, request.getCurrentPassword(), request.getNewPassword());
+            authService.changePassword(cognitoUsername, request1.getCurrentPassword(), request1.getNewPassword());
 
             ApiResponse<String> response = ApiResponse.success(
                     "Password changed successfully",
