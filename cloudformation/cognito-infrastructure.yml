@@ -110,7 +110,50 @@ Resources:
       Domain: !Sub '${ServiceName}-${Environment}-${AWS::AccountId}'
       UserPoolId: !Ref CognitoUserPool
 
-  # IAM Role for accessing Cognito from the application
+  # DynamoDB Table for User Profiles
+  UserProfileTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-user-table'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: username
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: username-index
+          KeySchema:
+            - AttributeName: username
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: !Ref ServiceName
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-user-table'
+
+  # IAM Role for accessing Cognito and DynamoDB from the application
   CognitoAccessRole:
     Type: AWS::IAM::Role
     Properties:
@@ -145,6 +188,23 @@ Resources:
                   - cognito-idp:ForgotPassword
                   - cognito-idp:ConfirmForgotPassword
                 Resource: !GetAtt CognitoUserPool.Arn
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource: 
+                  - !GetAtt UserProfileTable.Arn
+                  - !Sub '${UserProfileTable.Arn}/index/*'
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -195,6 +255,18 @@ Outputs:
     Export:
       Name: !Sub '${ServiceName}-${Environment}-Region'
 
+  UserProfileTableName:
+    Description: 'DynamoDB User Profile Table Name'
+    Value: !Ref UserProfileTable
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-UserProfileTableName'
+
+  UserProfileTableArn:
+    Description: 'DynamoDB User Profile Table ARN'
+    Value: !GetAtt UserProfileTable.Arn
+    Export:
+      Name: !Sub '${ServiceName}-${Environment}-UserProfileTableArn'
+
   # Environment variables for the application
   EnvironmentVariables:
     Description: 'Environment variables to set in your application'
@@ -203,5 +275,6 @@ Outputs:
       AWS_COGNITO_USER_POOL_ID=${CognitoUserPool}
       AWS_COGNITO_CLIENT_ID=${CognitoUserPoolClient}
       AWS_COGNITO_CLIENT_SECRET=${CognitoUserPoolClient.ClientSecret}
+      AWS_DYNAMODB_USER_TABLE=${UserProfileTable}
     Export:
       Name: !Sub '${ServiceName}-${Environment}-EnvVars'

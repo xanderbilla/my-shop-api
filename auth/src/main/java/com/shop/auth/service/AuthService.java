@@ -8,6 +8,7 @@ import com.shop.auth.dto.VerifyRequest;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.enums.UserStatus;
 import com.shop.auth.model.User;
+import com.shop.auth.service.UserProfileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
@@ -29,6 +30,7 @@ public class AuthService {
 
     private final CognitoIdentityProviderClient cognitoClient;
     private final CognitoConfig cognitoConfig;
+    private final UserProfileService userProfileService;
 
     public User signup(SignupRequest request) {
         try {
@@ -69,7 +71,7 @@ public class AuthService {
 
             SignUpResponse signUpResponse = cognitoClient.signUp(signUpBuilder.build());
 
-            return createUserWithDefaultStatus(
+            User user = createUserWithDefaultStatus(
                     signUpResponse.userSub(), // Set the Cognito UUID as userId
                     request.getUsername(), // Keep the custom username in our system
                     request.getName(),
@@ -77,6 +79,16 @@ public class AuthService {
                     false, // User needs to verify email
                     List.of(request.getRole()) // Convert single role to list
             );
+
+            // Create DynamoDB entry for the user profile
+            try {
+                userProfileService.createUserProfile(user);
+            } catch (Exception e) {
+                // Log the error but don't fail the signup process
+                System.err.println("Failed to create user profile in DynamoDB: " + e.getMessage());
+            }
+
+            return user;
 
         } catch (CognitoIdentityProviderException e) {
             throw new RuntimeException("Failed to create user: " + e.awsErrorDetails().errorMessage());
@@ -120,6 +132,9 @@ public class AuthService {
             // Get user attributes using the email
             User user = getUserInfo(userEmail);
 
+            // Update last login timestamp in DynamoDB
+            userProfileService.updateLastLogin(user.getUserId());
+
             // Replace the email with the custom username in the response
             User userWithCustomUsername = createUserBasedOnExisting(user, request.getUsername());
 
@@ -159,6 +174,10 @@ public class AuthService {
 
             // Get user info and replace email with custom username
             User user = getUserInfo(userEmail);
+
+            // Update verification status in DynamoDB
+            userProfileService.updateVerificationStatus(user.getUserId(), true);
+
             return createUserBasedOnExisting(user, request.getUsername());
 
         } catch (CognitoIdentityProviderException e) {

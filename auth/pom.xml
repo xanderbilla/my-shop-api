@@ -60,6 +60,12 @@
 			<artifactId>cognitoidentityprovider</artifactId>
 		</dependency>
 
+		<!-- AWS SDK for DynamoDB -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>dynamodb-enhanced</artifactId>
+		</dependency>
+
 		<!-- Spring Boot Validation -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
