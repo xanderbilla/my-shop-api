@@ -1,193 +1,57 @@
 # Spring Microservices Shop Application
 
-A microservices-based e-commerce application built with Spring Boot and Spring Cloud.
+A **Spring Boot + Spring Cloud** e-commerce system built with microservices.
 
-## Architecture Overview
+## 🏗 Architecture
 
-This project consists of multiple microservices that work together to provide a complete e-commerce solution:
+* **Service Registry (Eureka, 8761)** – service discovery
+* **API Gateway (8080)** – routes client requests
+* **Auth Service (8081)** – authentication & authorization
+* **Admin Service (8082)** – admin operations
+* **Client Service (8083)** – customer operations
 
-- **Service Registry (Eureka Server)** - Service discovery and registration
-- **API Gateway** - Single entry point for all client requests
-- **Auth Service** - Authentication and authorization
-- **Admin Service** - Administrative operations
-- **Client Service** - Customer-facing operations
+## 🔗 Repository
 
-## Services
+[Spring Microservices Shop Application](https://github.com/xanderbilla/spring-microservice)
 
-### 🔧 Service Registry
-- **Port**: 8761
-- **Purpose**: Eureka server for service discovery
-- **URL**: http://localhost:8761
+## 🚀 Run Locally
 
-### 🚪 API Gateway
-- **Port**: 8080
-- **Purpose**: Routes requests to appropriate microservices
-- **URL**: http://localhost:8080
-
-### 🔐 Auth Service
-- **Port**: 8081 (configurable)
-- **Purpose**: Handle authentication and authorization
-- **Endpoints**:
-  - `GET /auth/info` - Service health check
-
-### 👑 Admin Service
-- **Port**: 8082 (configurable)
-- **Purpose**: Administrative operations and management
-
-### 👤 Client Service
-- **Port**: 8083 (configurable)
-- **Purpose**: Customer-facing operations and user management
-
-## Prerequisites
-
-- Java 17 or higher
-- Maven 3.6+
-- Git
-
-## Getting Started
-
-### 1. Clone the repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/xanderbilla/spring-microservice
 cd spring-microservice
+mvn clean install (each service one by one)
 ```
 
-### 2. Build all services
-```bash
-# Build all services at once
-mvn clean install
+Start in order:
 
-# Or build each service individually
-cd service-registry && mvn clean install
-cd ../api-gateway && mvn clean install
-cd ../auth && mvn clean install
-cd ../admin && mvn clean install
-cd ../client && mvn clean install
-```
+1. Service Registry → 2. API Gateway → 3. Other services (`auth`, `admin`, `client`)
 
-### 3. Start the services
+## 🌐 Access
 
-**Important**: Start services in the following order:
+* **Eureka Dashboard** → [http://localhost:8761](http://localhost:8761)
+* **Gateway** → [http://localhost:8080](http://localhost:8080)
+* Example: `http://localhost:8080/auth/info`
 
-1. **Service Registry** (must be started first)
-```bash
-cd service-registry
-mvn spring-boot:run
-```
+## 📖 Documentation Index
 
-2. **API Gateway**
-```bash
-cd api-gateway
-mvn spring-boot:run
-```
+API details are in the [**Wiki**](https://github.com/xanderbilla/spring-microservice/wiki):
 
-3. **Other Services** (can be started in any order)
-```bash
-# Auth Service
-cd auth
-mvn spring-boot:run
+* [Auth Service](https://github.com/xanderbilla/spring-microservice/wiki/Auth-Service)
+* [Admin Service](https://github.com/xanderbilla/spring-microservice/wiki)
+* [Client Service](https://github.com/xanderbilla/spring-microservice/wiki)
+* [API Gateway](https://github.com/xanderbilla/spring-microservice/wiki)
+* [Service Registry](https://github.com/xanderbilla/spring-microservice/wiki)
 
-# Admin Service
-cd admin
-mvn spring-boot:run
+## ⚙ Tech Stack
 
-# Client Service
-cd client
-mvn spring-boot:run
-```
+Spring Boot · Spring Cloud · Spring Cloud Gateway · Netflix Eureka · Maven · Java 17
 
-## Configuration
+## 🛠 Troubleshooting
 
-### Service Registry (Eureka)
-- Dashboard: http://localhost:8761
-- All other services register themselves with this registry
+* Service not in Eureka? → check `eureka.client.service-url.defaultZone`
+* Gateway not routing? → confirm service registered in Eureka
+* Port conflicts? → change `server.port` in `application.properties`
 
-### API Gateway
-- All external requests should go through the gateway at http://localhost:8080
-- Routes are configured to forward requests to appropriate services
+## 👥 Author
 
-### Service-specific Configuration
-Each service has its own `application.properties` file in `src/main/resources/`:
-- Database configurations
-- Service-specific ports
-- Eureka client settings
-
-## API Endpoints
-
-### Auth Service
-```
-GET /auth/info - Get service information
-```
-
-### Gateway Routes
-All services are accessible through the gateway:
-```
-http://localhost:8080/auth/info
-http://localhost:8080/admin/{endpoint}
-http://localhost:8080/client/{endpoint}
-```
-
-## Development
-
-### Adding New Endpoints
-1. Create controllers in the appropriate service
-2. Ensure proper service registration with Eureka
-3. Update API Gateway routes if needed
-
-### Service Communication
-Services communicate with each other through:
-- Service discovery via Eureka
-- Load balancing through Spring Cloud LoadBalancer
-- API Gateway routing
-
-## Monitoring
-
-- **Eureka Dashboard**: http://localhost:8761 - View all registered services
-- **Service Health**: Each service provides actuator endpoints for monitoring
-
-## Docker Support (Future Enhancement)
-
-```bash
-# Build Docker images
-docker-compose build
-
-# Start all services
-docker-compose up
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## Technology Stack
-
-- **Spring Boot** - Microservice framework
-- **Spring Cloud** - Microservice coordination
-- **Spring Cloud Gateway** - API Gateway
-- **Netflix Eureka** - Service discovery
-- **Maven** - Build tool
-- **Java 17** - Programming language
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Service not registering with Eureka**
-   - Ensure Service Registry is running first
-   - Check `eureka.client.service-url.defaultZone` configuration
-
-2. **Gateway not routing requests**
-   - Verify service registration in Eureka dashboard
-   - Check gateway route configurations
-
-3. **Port conflicts**
-   - Update `server.port` in `application.properties`
-   - Ensure no other applications are using the same ports
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+[Xander Billa](https://xanderbilla.com)
