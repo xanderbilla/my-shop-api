@@ -43,6 +43,7 @@ public class UserProfileService {
                 .kycVerified(false)
                 .fraudRisk(FraudRisk.LOW)
                 .consent(createDefaultConsent())
+                .deleteStatus(User.DeleteStatus.createDefault()) // Add default deleteStatus
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .lastLogin(null) // Will be set on first login
@@ -121,5 +122,57 @@ public class UserProfileService {
                 .marketing(false)
                 .dataSharing(false)
                 .build();
+    }
+
+    /**
+     * Soft delete a user by setting isDeleted to true and deletedAt timestamp
+     */
+    public User softDeleteUser(String userId) {
+        User user = getUserProfile(userId);
+        if (user == null) {
+            throw new RuntimeException("User not found with ID: " + userId);
+        }
+
+        if (user.getDeleteStatus().getIsDeleted()) {
+            throw new RuntimeException("User is already deleted");
+        }
+
+        User.DeleteStatus deleteStatus = user.getDeleteStatus();
+        deleteStatus.setIsDeleted(true);
+        deleteStatus.setDeletedAt(Instant.now());
+
+        user.setDeleteStatus(deleteStatus);
+        user.setUpdatedAt(Instant.now());
+        user.setUpdatedBy("SYSTEM");
+
+        userProfileRepository.save(user);
+        return user;
+    }
+
+    /**
+     * Restore a soft-deleted user by setting isDeleted to false and incrementing
+     * restoresCount
+     */
+    public User restoreUser(String userId) {
+        User user = getUserProfile(userId);
+        if (user == null) {
+            throw new RuntimeException("User not found with ID: " + userId);
+        }
+
+        if (!user.getDeleteStatus().getIsDeleted()) {
+            throw new RuntimeException("User is not deleted");
+        }
+
+        User.DeleteStatus deleteStatus = user.getDeleteStatus();
+        deleteStatus.setIsDeleted(false);
+        deleteStatus.setRestoreAt(Instant.now());
+        deleteStatus.setRestoresCount(deleteStatus.getRestoresCount() + 1);
+
+        user.setDeleteStatus(deleteStatus);
+        user.setUpdatedAt(Instant.now());
+        user.setUpdatedBy("SYSTEM");
+
+        userProfileRepository.save(user);
+        return user;
     }
 }

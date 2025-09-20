@@ -1,5 +1,5 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Spring Microservice Auth Service - AWS Cognito User Pool Infrastructure'
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Spring Microservice Auth Service - AWS Cognito User Pool Infrastructure"
 
 Parameters:
   Environment:
@@ -7,12 +7,12 @@ Parameters:
     Default: dev
     AllowedValues: [dev, staging, prod]
     Description: Environment name
-  
+
   ServiceName:
     Type: String
     Default: spring-microservice-auth
     Description: Name of the service
-  
+
   UserPoolName:
     Type: String
     Default: spring-microservice-users
@@ -23,16 +23,16 @@ Resources:
   CognitoUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
-      UserPoolName: !Sub '${ServiceName}-${Environment}-user-pool'
+      UserPoolName: !Sub "${ServiceName}-${Environment}-user-pool"
       AliasAttributes:
         - preferred_username
       AutoVerifiedAttributes:
         - email
       EmailConfiguration:
         EmailSendingAccount: COGNITO_DEFAULT
-      EmailVerificationSubject: !Sub '${ServiceName} - Verify your email'
-      EmailVerificationMessage: 'Your verification code is {####}'
-      MfaConfiguration: 'OFF'
+      EmailVerificationSubject: !Sub "${ServiceName} - Verify your email"
+      EmailVerificationMessage: "Your verification code is {####}"
+      MfaConfiguration: "OFF"
       Policies:
         PasswordPolicy:
           MinimumLength: 8
@@ -64,13 +64,13 @@ Resources:
       UserPoolTags:
         Environment: !Ref Environment
         Service: !Ref ServiceName
-        Name: !Sub '${ServiceName}-${Environment}-user-pool'
+        Name: !Sub "${ServiceName}-${Environment}-user-pool"
 
   # Cognito User Pool Client
   CognitoUserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
-      ClientName: !Sub '${ServiceName}-${Environment}-client'
+      ClientName: !Sub "${ServiceName}-${Environment}-client"
       UserPoolId: !Ref CognitoUserPool
       GenerateSecret: true
       ExplicitAuthFlows:
@@ -107,14 +107,31 @@ Resources:
   CognitoUserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
-      Domain: !Sub '${ServiceName}-${Environment}-${AWS::AccountId}'
+      Domain: !Sub "${ServiceName}-${Environment}-${AWS::AccountId}"
       UserPoolId: !Ref CognitoUserPool
+
+  # Cognito User Pool Groups
+  CognitoUserGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: USER
+      Description: Default user group with basic permissions
+      UserPoolId: !Ref CognitoUserPool
+      Precedence: 100
+
+  CognitoAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: ADMIN
+      Description: Administrator group with elevated permissions
+      UserPoolId: !Ref CognitoUserPool
+      Precedence: 10
 
   # DynamoDB Table for User Profiles
   UserProfileTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub '${AWS::StackName}-user-table'
+      TableName: !Sub "${AWS::StackName}-user-table"
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: userId
@@ -151,15 +168,15 @@ Resources:
         - Key: Service
           Value: !Ref ServiceName
         - Key: Name
-          Value: !Sub '${AWS::StackName}-user-table'
+          Value: !Sub "${AWS::StackName}-user-table"
 
   # IAM Role for accessing Cognito and DynamoDB from the application
   CognitoAccessRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${ServiceName}-${Environment}-cognito-access-role'
+      RoleName: !Sub "${ServiceName}-${Environment}-cognito-access-role"
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
@@ -172,7 +189,7 @@ Resources:
       Policies:
         - PolicyName: CognitoAccess
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
@@ -182,15 +199,21 @@ Resources:
                   - cognito-idp:AdminGetUser
                   - cognito-idp:AdminUpdateUserAttributes
                   - cognito-idp:AdminDeleteUser
+                  - cognito-idp:AdminAddUserToGroup
+                  - cognito-idp:AdminRemoveUserFromGroup
+                  - cognito-idp:AdminListGroupsForUser
                   - cognito-idp:ListUsers
                   - cognito-idp:ConfirmSignUp
                   - cognito-idp:ResendConfirmationCode
                   - cognito-idp:ForgotPassword
                   - cognito-idp:ConfirmForgotPassword
+                  - cognito-idp:CreateGroup
+                  - cognito-idp:GetGroup
+                  - cognito-idp:ListGroups
                 Resource: !GetAtt CognitoUserPool.Arn
         - PolicyName: DynamoDBAccess
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
@@ -202,9 +225,9 @@ Resources:
                   - dynamodb:Scan
                   - dynamodb:BatchGetItem
                   - dynamodb:BatchWriteItem
-                Resource: 
+                Resource:
                   - !GetAtt UserProfileTable.Arn
-                  - !Sub '${UserProfileTable.Arn}/index/*'
+                  - !Sub "${UserProfileTable.Arn}/index/*"
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -220,56 +243,56 @@ Resources:
 
 Outputs:
   UserPoolId:
-    Description: 'Cognito User Pool ID'
+    Description: "Cognito User Pool ID"
     Value: !Ref CognitoUserPool
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-UserPoolId'
+      Name: !Sub "${ServiceName}-${Environment}-UserPoolId"
 
   UserPoolClientId:
-    Description: 'Cognito User Pool Client ID'
+    Description: "Cognito User Pool Client ID"
     Value: !Ref CognitoUserPoolClient
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-UserPoolClientId'
+      Name: !Sub "${ServiceName}-${Environment}-UserPoolClientId"
 
   UserPoolClientSecret:
-    Description: 'Cognito User Pool Client Secret'
+    Description: "Cognito User Pool Client Secret"
     Value: !GetAtt CognitoUserPoolClient.ClientSecret
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-UserPoolClientSecret'
+      Name: !Sub "${ServiceName}-${Environment}-UserPoolClientSecret"
 
   UserPoolDomain:
-    Description: 'Cognito User Pool Domain'
-    Value: !Sub 'https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+    Description: "Cognito User Pool Domain"
+    Value: !Sub "https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-UserPoolDomain'
+      Name: !Sub "${ServiceName}-${Environment}-UserPoolDomain"
 
   CognitoAccessRoleArn:
-    Description: 'IAM Role ARN for Cognito Access'
+    Description: "IAM Role ARN for Cognito Access"
     Value: !GetAtt CognitoAccessRole.Arn
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-CognitoAccessRoleArn'
+      Name: !Sub "${ServiceName}-${Environment}-CognitoAccessRoleArn"
 
   Region:
-    Description: 'AWS Region'
+    Description: "AWS Region"
     Value: !Ref AWS::Region
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-Region'
+      Name: !Sub "${ServiceName}-${Environment}-Region"
 
   UserProfileTableName:
-    Description: 'DynamoDB User Profile Table Name'
+    Description: "DynamoDB User Profile Table Name"
     Value: !Ref UserProfileTable
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-UserProfileTableName'
+      Name: !Sub "${ServiceName}-${Environment}-UserProfileTableName"
 
   UserProfileTableArn:
-    Description: 'DynamoDB User Profile Table ARN'
+    Description: "DynamoDB User Profile Table ARN"
     Value: !GetAtt UserProfileTable.Arn
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-UserProfileTableArn'
+      Name: !Sub "${ServiceName}-${Environment}-UserProfileTableArn"
 
   # Environment variables for the application
   EnvironmentVariables:
-    Description: 'Environment variables to set in your application'
+    Description: "Environment variables to set in your application"
     Value: !Sub |
       AWS_COGNITO_REGION=${AWS::Region}
       AWS_COGNITO_USER_POOL_ID=${CognitoUserPool}
@@ -277,4 +300,4 @@ Outputs:
       AWS_COGNITO_CLIENT_SECRET=${CognitoUserPoolClient.ClientSecret}
       AWS_DYNAMODB_USER_TABLE=${UserProfileTable}
     Export:
-      Name: !Sub '${ServiceName}-${Environment}-EnvVars'
+      Name: !Sub "${ServiceName}-${Environment}-EnvVars"

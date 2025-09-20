@@ -40,7 +40,11 @@ public class AuthService {
             Map<String, String> userAttributes = new HashMap<>();
             userAttributes.put("email", request.getEmail());
             userAttributes.put("name", request.getName());
-            userAttributes.put("custom:role", request.getRole().name());
+            // Store all roles as comma-separated string in custom:role
+            String rolesString = request.getRoles().stream()
+                    .map(UserRole::name)
+                    .collect(Collectors.joining(","));
+            userAttributes.put("custom:role", rolesString);
             userAttributes.put("custom:username", request.getUsername()); // Store custom username as attribute
 
             // Calculate secret hash if client secret is provided
@@ -76,8 +80,18 @@ public class AuthService {
                     request.getName(),
                     request.getEmail(),
                     false, // User needs to verify email
-                    List.of(request.getRole()) // Convert single role to list
+                    request.getRoles() // Use roles list instead of single role
             );
+
+            // Assign user to Cognito groups immediately after signup
+            // This ensures groups are assigned even if verification is done manually
+            try {
+                System.out.println("Assigning user to groups during signup...");
+                assignUserToCognitoGroups(request.getEmail(), request.getRoles());
+            } catch (Exception e) {
+                System.err.println("Warning: Failed to assign user to groups during signup: " + e.getMessage());
+                // Don't fail signup process due to group assignment issues
+            }
 
             // Create DynamoDB entry for the user profile
             try {
@@ -93,6 +107,64 @@ public class AuthService {
             throw new RuntimeException("Failed to create user: " + e.awsErrorDetails().errorMessage());
         } catch (Exception e) {
             throw new RuntimeException("Signup failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Assign user to Cognito groups based on their roles
+     * This method is called after user signup to add them to appropriate groups
+     */
+    private void assignUserToCognitoGroups(String cognitoUsername, List<UserRole> roles) {
+        try {
+            System.out.println("Starting group assignment for user: " + cognitoUsername);
+            System.out.println(
+                    "Roles to assign: " + roles.stream().map(UserRole::name).collect(Collectors.joining(", ")));
+
+            for (UserRole role : roles) {
+                String groupName = role.name(); // USER, ADMIN, etc.
+                System.out.println("Processing role: " + groupName);
+
+                // Check if group exists, create if it doesn't (though CloudFormation should
+                // have created them)
+                try {
+                    GetGroupRequest getGroupRequest = GetGroupRequest.builder()
+                            .userPoolId(cognitoConfig.getUserPoolId())
+                            .groupName(groupName)
+                            .build();
+                    GetGroupResponse groupResponse = cognitoClient.getGroup(getGroupRequest);
+                    System.out.println("Group " + groupName + " exists: " + groupResponse.group().groupName());
+                } catch (ResourceNotFoundException e) {
+                    // Group doesn't exist, create it
+                    System.out.println("Group " + groupName + " not found, creating...");
+                    CreateGroupRequest createGroupRequest = CreateGroupRequest.builder()
+                            .userPoolId(cognitoConfig.getUserPoolId())
+                            .groupName(groupName)
+                            .description("Auto-created group for " + groupName + " role")
+                            .build();
+                    cognitoClient.createGroup(createGroupRequest);
+                    System.out.println("Created Cognito group: " + groupName);
+                }
+
+                // Add user to group
+                try {
+                    AdminAddUserToGroupRequest addToGroupRequest = AdminAddUserToGroupRequest.builder()
+                            .userPoolId(cognitoConfig.getUserPoolId())
+                            .username(cognitoUsername)
+                            .groupName(groupName)
+                            .build();
+                    cognitoClient.adminAddUserToGroup(addToGroupRequest);
+                    System.out.println("✓ Successfully added user " + cognitoUsername + " to group: " + groupName);
+                } catch (Exception groupAddError) {
+                    System.err
+                            .println("✗ Failed to add user to group " + groupName + ": " + groupAddError.getMessage());
+                    throw groupAddError; // Re-throw to be caught by outer try-catch
+                }
+            }
+            System.out.println("✓ Group assignment completed successfully for user: " + cognitoUsername);
+        } catch (Exception e) {
+            System.err.println("✗ Failed to assign user to Cognito groups: " + e.getMessage());
+            e.printStackTrace();
+            // Don't throw exception as this is not critical for signup process
         }
     }
 
@@ -176,6 +248,10 @@ public class AuthService {
 
             // Update verification status in DynamoDB
             userProfileService.updateVerificationStatus(user.getUserId(), true);
+
+            // Assign user to Cognito groups based on their roles after successful
+            // verification
+            assignUserToCognitoGroups(userEmail, user.getRoles());
 
             return createUserBasedOnExisting(user, request.getUsername());
 

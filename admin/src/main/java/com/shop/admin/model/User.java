@@ -38,6 +38,7 @@ public class User {
     private Boolean kycVerified; // identity verification
     private FraudRisk fraudRisk; // LOW | MEDIUM | HIGH
     private Consent consent; // GDPR/consent flags
+    private DeleteStatus deleteStatus; // Soft delete tracking
     private Instant createdAt;
     private Instant updatedAt;
     private Instant lastLogin; // Last successful login timestamp
@@ -121,5 +122,27 @@ public class User {
     public static class Consent {
         private Boolean marketing;
         private Boolean dataSharing;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @DynamoDbBean
+    public static class DeleteStatus {
+        private Boolean isDeleted;
+        private Integer restoresCount;
+        private Instant deletedAt;
+        private Instant restoreAt;
+
+        // Static method to create default deleteStatus
+        public static DeleteStatus createDefault() {
+            return DeleteStatus.builder()
+                    .isDeleted(false)
+                    .restoresCount(0)
+                    .deletedAt(null)
+                    .restoreAt(null)
+                    .build();
+        }
     }
 }

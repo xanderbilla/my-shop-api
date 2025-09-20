@@ -1,6 +1,7 @@
 package com.shop.auth.controller;
 
 import com.shop.auth.dto.*;
+import com.shop.auth.enums.UserRole;
 import com.shop.auth.exception.InvalidTokenException;
 import com.shop.auth.model.AuthUser;
 import com.shop.auth.service.AuthService;
@@ -13,6 +14,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.ArrayList;
 
 @RestController
 @RequiredArgsConstructor
@@ -70,6 +74,28 @@ public class AuthController {
                 .orElseThrow(() -> new RuntimeException("Authentication required"));
 
         AuthUser user = validateTokenAndGetUser("Bearer " + token);
+
+        // Extract cognito:groups from JWT token instead of using stored roles
+        List<String> cognitoGroups = jwtTokenService.extractCognitoGroupsFromToken(token);
+
+        // Convert string groups to UserRole enums
+        List<UserRole> roles = new ArrayList<>();
+        for (String group : cognitoGroups) {
+            try {
+                UserRole role = UserRole.valueOf(group.toUpperCase());
+                roles.add(role);
+            } catch (IllegalArgumentException e) {
+                // Skip unknown roles, or default to USER
+                System.err.println("Unknown role from Cognito: " + group);
+            }
+        }
+
+        // If no valid roles found, default to USER
+        if (roles.isEmpty()) {
+            roles.add(UserRole.USER);
+        }
+
+        user.setRoles(roles);
 
         ApiResponse<AuthUser> response = ApiResponse.success(
                 "User information retrieved successfully",
@@ -199,7 +225,28 @@ public class AuthController {
                     .orElseThrow(() -> new RuntimeException("Authentication required"));
 
             AuthUser user = validateTokenAndGetUser("Bearer " + token);
-            GetRoleResponse roleResponse = new GetRoleResponse(user.getUsername(), user.getEmail(), user.getRoles());
+
+            // Extract cognito:groups from JWT token instead of using stored roles
+            List<String> cognitoGroups = jwtTokenService.extractCognitoGroupsFromToken(token);
+
+            // Convert string groups to UserRole enums
+            List<UserRole> roles = new ArrayList<>();
+            for (String group : cognitoGroups) {
+                try {
+                    UserRole role = UserRole.valueOf(group.toUpperCase());
+                    roles.add(role);
+                } catch (IllegalArgumentException e) {
+                    // Skip unknown roles, or default to USER
+                    System.err.println("Unknown role from Cognito: " + group);
+                }
+            }
+
+            // If no valid roles found, default to USER
+            if (roles.isEmpty()) {
+                roles.add(UserRole.USER);
+            }
+
+            GetRoleResponse roleResponse = new GetRoleResponse(user.getUsername(), user.getEmail(), roles);
 
             ApiResponse<GetRoleResponse> response = ApiResponse.success(
                     "User roles retrieved successfully",

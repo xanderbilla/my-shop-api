@@ -9,6 +9,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+import java.util.Arrays;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -31,10 +34,27 @@ public class SignupRequest {
     @Size(min = 8, message = "Password must be at least 8 characters long")
     private String password;
 
-    // Optional role, defaults to USER if not provided
-    private UserRole role;
+    // Optional roles, defaults to USER if not provided
+    // Can accept single role or comma-separated roles: "USER" or "USER,ADMIN"
+    private List<UserRole> roles;
 
+    public List<UserRole> getRoles() {
+        if (roles == null || roles.isEmpty()) {
+            return Arrays.asList(UserRole.USER);
+        }
+        return roles;
+    }
+
+    // For backward compatibility, support single role
+    @Deprecated
     public UserRole getRole() {
-        return role != null ? role : UserRole.USER;
+        List<UserRole> rolesList = getRoles();
+        return rolesList.isEmpty() ? UserRole.USER : rolesList.get(0);
+    }
+
+    // For backward compatibility, support setting single role
+    @Deprecated
+    public void setRole(UserRole role) {
+        this.roles = role != null ? Arrays.asList(role) : Arrays.asList(UserRole.USER);
     }
 }

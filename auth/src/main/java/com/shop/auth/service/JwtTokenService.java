@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -138,6 +140,37 @@ public class JwtTokenService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to extract username from token", e);
         }
+    }
+
+    /**
+     * Extract cognito:groups from JWT token payload
+     * This returns the list of groups/roles assigned to the user in Cognito
+     */
+    public List<String> extractCognitoGroupsFromToken(String token) {
+        try {
+            JsonNode payload = extractPayloadFromToken(token);
+            List<String> groups = new ArrayList<>();
+
+            // For Cognito tokens, groups are stored in 'cognito:groups' field
+            JsonNode groupsNode = payload.get("cognito:groups");
+            if (groupsNode != null && groupsNode.isArray()) {
+                for (JsonNode groupNode : groupsNode) {
+                    groups.add(groupNode.asText());
+                }
+            }
+
+            return groups;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to extract cognito groups from token", e);
+        }
+    }
+
+    /**
+     * Check if user has a specific group/role from cognito:groups claim
+     */
+    public boolean hasGroup(String token, String groupName) {
+        List<String> groups = extractCognitoGroupsFromToken(token);
+        return groups.contains(groupName);
     }
 
     /**
