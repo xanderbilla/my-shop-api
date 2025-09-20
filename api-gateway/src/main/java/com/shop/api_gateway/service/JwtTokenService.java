@@ -1,4 +1,4 @@
-package com.shop.admin.service;
+package com.shop.api_gateway.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,137 +12,159 @@ import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.RSAPublicKeySpec;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Enhanced JWT Token Service for API Gateway with Cognito JWKS Validation
+ * 
+ * This service provides comprehensive JWT validation including:
+ * - Signature validation using Cognito JWKS
+ * - Token expiry (exp) verification
+ * - Issuer check (iss) validation
+ * - Token format and structure validation
+ * 
+ * @author Vikas Singh
+ * @version 2.0
+ * @since 2025-09-20
+ */
 @Service
 public class JwtTokenService {
 
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final WebClient webClient;
     private final Map<String, PublicKey> keyCache = new ConcurrentHashMap<>();
 
-    @Value("${aws.cognito.region}")
+    @Value("${aws.cognito.region:us-east-1}")
     private String cognitoRegion;
 
-    @Value("${aws.cognito.userPoolId}")
+    @Value("${aws.cognito.userPoolId:us-east-1_Qst5LEWYk}")
     private String userPoolId;
+
+    @Value("${aws.cognito.clientId:72it13gri0bd0nm3rpj5b37a7q}")
+    private String clientId;
 
     private String expectedIssuer;
     private String jwksUrl;
 
-    public JwtTokenService(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public JwtTokenService() {
         this.webClient = WebClient.builder().build();
     }
 
     /**
-     * Comprehensive JWT token validation with signature verification
+     * Comprehensive JWT token validation with Cognito JWKS verification
      */
     public boolean isValidToken(String token) {
         try {
             if (token == null || token.trim().isEmpty()) {
+                System.err.println("JWT Validation Failed: Token is null or empty");
                 return false;
             }
 
-            // Initialize URLs if needed
+            // Initialize URLs if not done yet
             initializeUrls();
 
-            // Validate JWT structure
-            String[] parts = token.split("\\.");
-            if (parts.length != 3) {
+            // Parse JWT
+            String[] tokenParts = token.split("\\.");
+            if (tokenParts.length != 3) {
+                System.err.println("JWT Validation Failed: Invalid token format");
                 return false;
             }
 
-            // Decode header and payload
-            JsonNode header = decodeJsonBase64(parts[0]);
-            JsonNode payload = decodeJsonBase64(parts[1]);
+            // Decode and validate header
+            JsonNode header = decodeJsonBase64(tokenParts[0]);
+            String keyId = header.get("kid").asText();
+            String algorithm = header.get("alg").asText();
 
-            // Validate token expiry
-            if (payload.has("exp")) {
-                long exp = payload.get("exp").asLong();
-                if (System.currentTimeMillis() / 1000 >= exp) {
-                    System.err.println("Token has expired");
-                    return false;
-                }
+            if (keyId == null || !"RS256".equals(algorithm)) {
+                System.err.println("JWT Validation Failed: Invalid header - keyId: " + keyId + ", alg: " + algorithm);
+                return false;
             }
 
+            // Decode and validate payload
+            JsonNode payload = decodeJsonBase64(tokenParts[1]);
+            
             // Validate issuer
-            if (payload.has("iss")) {
-                String issuer = payload.get("iss").asText();
-                if (!expectedIssuer.equals(issuer)) {
-                    System.err.println("Invalid issuer: " + issuer);
-                    return false;
-                }
-            }
-
-            // Validate token use (should be 'access' for API access)
-            if (payload.has("token_use")) {
-                String tokenUse = payload.get("token_use").asText();
-                if (!"access".equals(tokenUse)) {
-                    System.err.println("Invalid token use: " + tokenUse);
-                    return false;
-                }
-            }
-
-            // Verify signature using Cognito JWKS
-            if (!verifySignature(token, header)) {
-                System.err.println("Signature verification failed");
+            String issuer = payload.get("iss").asText();
+            if (!expectedIssuer.equals(issuer)) {
+                System.err.println("JWT Validation Failed: Invalid issuer: " + issuer + ", expected: " + expectedIssuer);
                 return false;
             }
 
+            // Validate expiration
+            long exp = payload.get("exp").asLong();
+            long currentTime = System.currentTimeMillis() / 1000;
+            if (exp <= currentTime) {
+                System.err.println("JWT Validation Failed: Token expired at: " + new Date(exp * 1000));
+                return false;
+            }
+
+            // Validate token use
+            String tokenUse = payload.has("token_use") ? payload.get("token_use").asText() : null;
+            if (!"access".equals(tokenUse)) {
+                System.err.println("JWT Validation Failed: Invalid token_use: " + tokenUse);
+                return false;
+            }
+
+            // Validate client_id if present
+            if (payload.has("client_id")) {
+                String tokenClientId = payload.get("client_id").asText();
+                if (!clientId.equals(tokenClientId)) {
+                    System.err.println("JWT Validation Failed: Invalid client_id: " + tokenClientId);
+                    return false;
+                }
+            }
+
+            // Validate signature
+            if (!verifySignature(token, keyId)) {
+                System.err.println("JWT Validation Failed: Invalid signature");
+                return false;
+            }
+
+            String username = payload.has("username") ? payload.get("username").asText() : "unknown";
+            System.out.println("JWT Validation Success: Token is valid for user: " + username);
             return true;
+
         } catch (Exception e) {
-            System.err.println("Token validation error: " + e.getMessage());
+            System.err.println("JWT Validation Failed: Unexpected error - " + e.getMessage());
             return false;
         }
     }
 
     /**
-     * Verify JWT signature using Cognito JWKS
+     * Verify JWT signature using Cognito public key
      */
-    private boolean verifySignature(String token, JsonNode header) {
+    private boolean verifySignature(String token, String keyId) {
         try {
-            String kid = header.get("kid").asText();
-            String alg = header.get("alg").asText();
-
-            if (!"RS256".equals(alg)) {
-                System.err.println("Unsupported algorithm: " + alg);
-                return false;
-            }
-
-            PublicKey publicKey = getPublicKey(kid);
+            PublicKey publicKey = getPublicKey(keyId);
             if (publicKey == null) {
-                System.err.println("Unable to get public key for kid: " + kid);
                 return false;
             }
 
             String[] parts = token.split("\\.");
-            String headerAndPayload = parts[0] + "." + parts[1];
+            String signedContent = parts[0] + "." + parts[1];
             byte[] signature = Base64.getUrlDecoder().decode(parts[2]);
 
-            Signature sig = Signature.getInstance("SHA256withRSA");
-            sig.initVerify(publicKey);
-            sig.update(headerAndPayload.getBytes());
+            Signature verifier = Signature.getInstance("SHA256withRSA");
+            verifier.initVerify(publicKey);
+            verifier.update(signedContent.getBytes());
 
-            return sig.verify(signature);
+            return verifier.verify(signature);
         } catch (Exception e) {
-            System.err.println("Signature verification error: " + e.getMessage());
+            System.err.println("Signature verification failed: " + e.getMessage());
             return false;
         }
     }
 
     /**
-     * Get public key from Cognito JWKS with caching
+     * Get public key from Cognito JWKS endpoint
      */
-    @Cacheable("jwks-keys")
-    private PublicKey getPublicKey(String kid) {
+    @Cacheable("jwksKeys")
+    public PublicKey getPublicKey(String keyId) {
         try {
-            if (keyCache.containsKey(kid)) {
-                return keyCache.get(kid);
+            // Check cache first
+            if (keyCache.containsKey(keyId)) {
+                return keyCache.get(keyId);
             }
 
             // Fetch JWKS from Cognito
@@ -152,34 +174,49 @@ public class JwtTokenService {
                     .bodyToMono(String.class)
                     .block();
 
+            if (jwksResponse == null) {
+                System.err.println("Failed to fetch JWKS from Cognito");
+                return null;
+            }
+
+            // Parse JWKS and find the key
             JsonNode jwks = objectMapper.readTree(jwksResponse);
             JsonNode keys = jwks.get("keys");
 
             for (JsonNode key : keys) {
-                if (kid.equals(key.get("kid").asText())) {
-                    String n = key.get("n").asText();
-                    String e = key.get("e").asText();
-
-                    byte[] nBytes = Base64.getUrlDecoder().decode(n);
-                    byte[] eBytes = Base64.getUrlDecoder().decode(e);
-
-                    BigInteger modulus = new BigInteger(1, nBytes);
-                    BigInteger exponent = new BigInteger(1, eBytes);
-
-                    RSAPublicKeySpec spec = new RSAPublicKeySpec(modulus, exponent);
-                    KeyFactory factory = KeyFactory.getInstance("RSA");
-                    PublicKey publicKey = factory.generatePublic(spec);
-
-                    keyCache.put(kid, publicKey);
+                if (keyId.equals(key.get("kid").asText())) {
+                    PublicKey publicKey = buildPublicKey(key);
+                    keyCache.put(keyId, publicKey);
                     return publicKey;
                 }
             }
 
+            System.err.println("Public key not found for key ID: " + keyId);
             return null;
+
         } catch (Exception e) {
             System.err.println("Error fetching public key: " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Build RSA public key from JWKS key data
+     */
+    private PublicKey buildPublicKey(JsonNode key) throws Exception {
+        String n = key.get("n").asText();
+        String e = key.get("e").asText();
+
+        byte[] nBytes = Base64.getUrlDecoder().decode(n);
+        byte[] eBytes = Base64.getUrlDecoder().decode(e);
+
+        BigInteger modulus = new BigInteger(1, nBytes);
+        BigInteger exponent = new BigInteger(1, eBytes);
+
+        RSAPublicKeySpec spec = new RSAPublicKeySpec(modulus, exponent);
+        KeyFactory factory = KeyFactory.getInstance("RSA");
+        
+        return factory.generatePublic(spec);
     }
 
     /**
@@ -269,22 +306,5 @@ public class JwtTokenService {
             }
         }
         return false;
-    }
-
-    // Legacy methods for backward compatibility
-    public String extractUsername(String token) {
-        return extractUsernameFromToken(token);
-    }
-
-    public List<String> extractCognitoGroups(String token) {
-        return extractCognitoGroupsFromToken(token);
-    }
-
-    public boolean hasGroup(String token, String groupName) {
-        return hasAnyRole(token, groupName);
-    }
-
-    public boolean isUser(String token) {
-        return hasAnyRole(token, "USER");
     }
 }

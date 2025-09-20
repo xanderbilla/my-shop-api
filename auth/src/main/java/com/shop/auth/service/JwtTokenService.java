@@ -2,12 +2,20 @@ package com.shop.auth.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.shop.auth.constants.AuthConstants;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 
+import java.math.BigInteger;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.Signature;
+import java.security.spec.RSAPublicKeySpec;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,17 +24,188 @@ public class JwtTokenService {
 
     // In-memory blacklist for tokens (in production, use Redis or database)
     private final Set<String> blacklistedTokens = ConcurrentHashMap.newKeySet();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
+    private final WebClient webClient;
+    private final Map<String, PublicKey> keyCache = new ConcurrentHashMap<>();
+
+    @Value("${aws.cognito.region}")
+    private String cognitoRegion;
+
+    @Value("${aws.cognito.userPoolId}")
+    private String userPoolId;
+
+    private String expectedIssuer;
+    private String jwksUrl;
+
+    public JwtTokenService(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.webClient = WebClient.builder().build();
+    }
 
     /**
-     * Check if token is valid (not blacklisted)
-     * For Cognito tokens, we rely on Cognito's validation
+     * Comprehensive JWT token validation with signature verification
      */
     public boolean isValidToken(String token) {
-        if (isTokenBlacklisted(token)) {
+        try {
+            if (token == null || token.trim().isEmpty()) {
+                return false;
+            }
+
+            // Check if token is blacklisted first
+            if (isTokenBlacklisted(token)) {
+                return false;
+            }
+
+            // Initialize URLs if needed
+            initializeUrls();
+
+            // Validate JWT structure
+            String[] parts = token.split("\\.");
+            if (parts.length != 3) {
+                return false;
+            }
+
+            // Decode header and payload
+            JsonNode header = decodeJsonBase64(parts[0]);
+            JsonNode payload = decodeJsonBase64(parts[1]);
+
+            // Validate token expiry
+            if (payload.has("exp")) {
+                long exp = payload.get("exp").asLong();
+                if (System.currentTimeMillis() / 1000 >= exp) {
+                    System.err.println("Token has expired");
+                    return false;
+                }
+            }
+
+            // Validate issuer
+            if (payload.has("iss")) {
+                String issuer = payload.get("iss").asText();
+                if (!expectedIssuer.equals(issuer)) {
+                    System.err.println("Invalid issuer: " + issuer);
+                    return false;
+                }
+            }
+
+            // Validate token use (should be 'access' for API access)
+            if (payload.has("token_use")) {
+                String tokenUse = payload.get("token_use").asText();
+                if (!"access".equals(tokenUse)) {
+                    System.err.println("Invalid token use: " + tokenUse);
+                    return false;
+                }
+            }
+
+            // Verify signature using Cognito JWKS
+            if (!verifySignature(token, header)) {
+                System.err.println("Signature verification failed");
+                return false;
+            }
+
+            return true;
+        } catch (Exception e) {
+            System.err.println("Token validation error: " + e.getMessage());
             return false;
         }
-        return true;
+    }
+
+    /**
+     * Verify JWT signature using Cognito JWKS
+     */
+    private boolean verifySignature(String token, JsonNode header) {
+        try {
+            String kid = header.get("kid").asText();
+            String alg = header.get("alg").asText();
+
+            if (!"RS256".equals(alg)) {
+                System.err.println("Unsupported algorithm: " + alg);
+                return false;
+            }
+
+            PublicKey publicKey = getPublicKey(kid);
+            if (publicKey == null) {
+                System.err.println("Unable to get public key for kid: " + kid);
+                return false;
+            }
+
+            String[] parts = token.split("\\.");
+            String headerAndPayload = parts[0] + "." + parts[1];
+            byte[] signature = Base64.getUrlDecoder().decode(parts[2]);
+
+            Signature sig = Signature.getInstance("SHA256withRSA");
+            sig.initVerify(publicKey);
+            sig.update(headerAndPayload.getBytes());
+
+            return sig.verify(signature);
+        } catch (Exception e) {
+            System.err.println("Signature verification error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Get public key from Cognito JWKS with caching
+     */
+    @Cacheable("jwks-keys")
+    private PublicKey getPublicKey(String kid) {
+        try {
+            if (keyCache.containsKey(kid)) {
+                return keyCache.get(kid);
+            }
+
+            // Fetch JWKS from Cognito
+            String jwksResponse = webClient.get()
+                    .uri(jwksUrl)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            JsonNode jwks = objectMapper.readTree(jwksResponse);
+            JsonNode keys = jwks.get("keys");
+
+            for (JsonNode key : keys) {
+                if (kid.equals(key.get("kid").asText())) {
+                    String n = key.get("n").asText();
+                    String e = key.get("e").asText();
+
+                    byte[] nBytes = Base64.getUrlDecoder().decode(n);
+                    byte[] eBytes = Base64.getUrlDecoder().decode(e);
+
+                    BigInteger modulus = new BigInteger(1, nBytes);
+                    BigInteger exponent = new BigInteger(1, eBytes);
+
+                    RSAPublicKeySpec spec = new RSAPublicKeySpec(modulus, exponent);
+                    KeyFactory factory = KeyFactory.getInstance("RSA");
+                    PublicKey publicKey = factory.generatePublic(spec);
+
+                    keyCache.put(kid, publicKey);
+                    return publicKey;
+                }
+            }
+
+            return null;
+        } catch (Exception e) {
+            System.err.println("Error fetching public key: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Decode Base64 URL encoded JSON
+     */
+    private JsonNode decodeJsonBase64(String base64) throws Exception {
+        byte[] decoded = Base64.getUrlDecoder().decode(base64);
+        return objectMapper.readTree(new String(decoded));
+    }
+
+    /**
+     * Initialize Cognito URLs
+     */
+    private void initializeUrls() {
+        if (expectedIssuer == null) {
+            expectedIssuer = String.format("https://cognito-idp.%s.amazonaws.com/%s", cognitoRegion, userPoolId);
+            jwksUrl = expectedIssuer + "/.well-known/jwks.json";
+        }
     }
 
     /**
@@ -55,74 +234,69 @@ public class JwtTokenService {
 
     /**
      * Extract username from JWT token payload
-     * For Cognito tokens, this returns the email (which is used as the username in
-     * Cognito)
      */
     public String extractUsernameFromToken(String token) {
         try {
-            JsonNode payload = extractPayloadFromToken(token);
-            // For Cognito tokens, username is stored in 'username' field (which is email)
-            JsonNode usernameNode = payload.get("username");
-            if (usernameNode != null) {
-                return usernameNode.asText();
-            }
+            String[] parts = token.split("\\.");
+            String payload = new String(Base64.getUrlDecoder().decode(parts[1]));
+            JsonNode payloadNode = objectMapper.readTree(payload);
 
-            // Fallback to 'email' field if 'username' is not present
-            JsonNode emailNode = payload.get(AuthConstants.JwtClaims.EMAIL);
-            if (emailNode != null) {
-                return emailNode.asText();
+            // Try different username fields
+            if (payloadNode.has("username")) {
+                return payloadNode.get("username").asText();
+            } else if (payloadNode.has("email")) {
+                return payloadNode.get("email").asText();
+            } else if (payloadNode.has("sub")) {
+                return payloadNode.get("sub").asText();
             }
-
-            throw new RuntimeException(AuthConstants.ErrorMessages.USERNAME_EMAIL_NOT_FOUND_IN_TOKEN);
+            
+            return "unknown";
         } catch (Exception e) {
-            throw new RuntimeException("Failed to extract username from token", e);
+            System.err.println("Failed to extract username: " + e.getMessage());
+            return "unknown";
         }
     }
 
     /**
      * Extract custom username from JWT token payload
-     * This looks for the custom:username attribute in Cognito token
      */
     public String extractCustomUsernameFromToken(String token) {
         try {
-            JsonNode payload = extractPayloadFromToken(token);
-            // For Cognito tokens, custom attributes are stored with 'custom:' prefix
-            JsonNode customUsernameNode = payload.get(AuthConstants.JwtClaims.CUSTOM_USERNAME);
-            if (customUsernameNode != null) {
-                return customUsernameNode.asText();
-            }
+            String[] parts = token.split("\\.");
+            String payload = new String(Base64.getUrlDecoder().decode(parts[1]));
+            JsonNode payloadNode = objectMapper.readTree(payload);
 
-            throw new RuntimeException(AuthConstants.ErrorMessages.CUSTOM_USERNAME_NOT_FOUND);
+            if (payloadNode.has("custom:username")) {
+                return payloadNode.get("custom:username").asText();
+            }
+            
+            return "unknown";
         } catch (Exception e) {
-            throw new RuntimeException("Failed to extract custom username from token", e);
+            System.err.println("Failed to extract custom username: " + e.getMessage());
+            return "unknown";
         }
     }
 
     /**
      * Extract email from JWT token payload
-     * For Cognito tokens, we extract the username (UUID) and use it to get user
-     * info
      */
     public String extractEmailFromToken(String token) {
         try {
-            JsonNode payload = extractPayloadFromToken(token);
+            String[] parts = token.split("\\.");
+            String payload = new String(Base64.getUrlDecoder().decode(parts[1]));
+            JsonNode payloadNode = objectMapper.readTree(payload);
 
-            // First try to get email directly (if available)
-            JsonNode emailNode = payload.get("email");
-            if (emailNode != null && !emailNode.isNull()) {
-                return emailNode.asText();
+            // Try email field first
+            if (payloadNode.has("email")) {
+                return payloadNode.get("email").asText();
+            } else if (payloadNode.has("username")) {
+                return payloadNode.get("username").asText();
             }
-
-            // If email not available, extract username (UUID) which is the Cognito username
-            JsonNode usernameNode = payload.get("username");
-            if (usernameNode != null && !usernameNode.isNull()) {
-                // Return the username (UUID) which can be used to lookup user info from Cognito
-                return usernameNode.asText();
-            }
-
-            throw new RuntimeException("Neither email nor username found in token");
+            
+            return "unknown";
         } catch (Exception e) {
-            throw new RuntimeException("Failed to extract email from token", e);
+            System.err.println("Failed to extract email: " + e.getMessage());
+            return "unknown";
         }
     }
 
@@ -131,38 +305,45 @@ public class JwtTokenService {
      */
     public String extractCognitoUsernameFromToken(String token) {
         try {
-            JsonNode payload = extractPayloadFromToken(token);
-            JsonNode usernameNode = payload.get("username");
-            if (usernameNode != null && !usernameNode.isNull()) {
-                return usernameNode.asText();
-            }
+            String[] parts = token.split("\\.");
+            String payload = new String(Base64.getUrlDecoder().decode(parts[1]));
+            JsonNode payloadNode = objectMapper.readTree(payload);
 
-            throw new RuntimeException("Username not found in token");
+            if (payloadNode.has("username")) {
+                return payloadNode.get("username").asText();
+            } else if (payloadNode.has("sub")) {
+                return payloadNode.get("sub").asText();
+            }
+            
+            return "unknown";
         } catch (Exception e) {
-            throw new RuntimeException("Failed to extract username from token", e);
+            System.err.println("Failed to extract Cognito username: " + e.getMessage());
+            return "unknown";
         }
     }
 
     /**
-     * Extract cognito:groups from JWT token payload
-     * This returns the list of groups/roles assigned to the user in Cognito
+     * Extract Cognito groups from JWT token
      */
     public List<String> extractCognitoGroupsFromToken(String token) {
         try {
-            JsonNode payload = extractPayloadFromToken(token);
-            List<String> groups = new ArrayList<>();
+            String[] parts = token.split("\\.");
+            String payload = new String(Base64.getUrlDecoder().decode(parts[1]));
+            JsonNode payloadNode = objectMapper.readTree(payload);
 
-            // For Cognito tokens, groups are stored in 'cognito:groups' field
-            JsonNode groupsNode = payload.get("cognito:groups");
-            if (groupsNode != null && groupsNode.isArray()) {
-                for (JsonNode groupNode : groupsNode) {
+            List<String> groups = new ArrayList<>();
+            JsonNode cognitoGroupsNode = payloadNode.get("cognito:groups");
+            
+            if (cognitoGroupsNode != null && cognitoGroupsNode.isArray()) {
+                for (JsonNode groupNode : cognitoGroupsNode) {
                     groups.add(groupNode.asText());
                 }
             }
-
+            
             return groups;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to extract cognito groups from token", e);
+            System.err.println("Failed to extract Cognito groups: " + e.getMessage());
+            return new ArrayList<>();
         }
     }
 
@@ -175,25 +356,23 @@ public class JwtTokenService {
     }
 
     /**
-     * Extract payload from JWT token
+     * Check if user has admin role
      */
-    private JsonNode extractPayloadFromToken(String token) {
-        try {
-            // Split the token into parts (header.payload.signature)
-            String[] tokenParts = token.split("\\.");
-            if (tokenParts.length != 3) {
-                throw new RuntimeException(AuthConstants.ErrorMessages.INVALID_JWT_FORMAT);
+    public boolean isAdmin(String token) {
+        List<String> groups = extractCognitoGroupsFromToken(token);
+        return groups.contains("ADMIN");
+    }
+
+    /**
+     * Check if user has any of the specified roles
+     */
+    public boolean hasAnyRole(String token, String... roles) {
+        List<String> userGroups = extractCognitoGroupsFromToken(token);
+        for (String role : roles) {
+            if (userGroups.contains(role.toUpperCase())) {
+                return true;
             }
-
-            // Decode the payload (second part)
-            String payload = tokenParts[1];
-            byte[] decodedBytes = Base64.getUrlDecoder().decode(payload);
-            String decodedPayload = new String(decodedBytes);
-
-            // Parse the JSON payload
-            return objectMapper.readTree(decodedPayload);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to extract payload from token", e);
         }
+        return false;
     }
 }

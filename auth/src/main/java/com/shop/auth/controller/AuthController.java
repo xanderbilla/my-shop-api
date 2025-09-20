@@ -3,9 +3,9 @@ package com.shop.auth.controller;
 import com.shop.auth.constants.AuthConstants;
 import com.shop.auth.dto.*;
 import com.shop.auth.enums.UserRole;
-import com.shop.auth.exception.InvalidTokenException;
 import com.shop.auth.model.AuthUser;
 import com.shop.auth.service.AuthService;
+import com.shop.auth.service.AuthSecurityService;
 import com.shop.auth.service.JwtTokenService;
 import com.shop.auth.util.CookieUtil;
 import com.shop.auth.util.ResponseUtil;
@@ -15,6 +15,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,6 +28,7 @@ public class AuthController {
     private final AuthService authService;
     private final JwtTokenService jwtTokenService;
     private final CookieUtil cookieUtil;
+    private final AuthSecurityService authSecurityService;
 
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<AuthUser>> signup(@Valid @RequestBody SignupRequest request) {
@@ -59,39 +61,44 @@ public class AuthController {
     }
 
     @GetMapping("/me")
+    @PreAuthorize("@authSecurityService.isAuthenticated()")
     public ResponseEntity<ApiResponse<AuthUser>> getCurrentUser(HttpServletRequest request) {
-        // Get token from cookie instead of Authorization header
-        String token = cookieUtil.getAccessTokenFromCookies(request)
-                .orElseThrow(() -> new RuntimeException("Authentication required"));
+        try {
+            // Get token from cookie - @PreAuthorize already validates authentication
+            String token = cookieUtil.getAccessTokenFromCookies(request)
+                    .orElseThrow(() -> new RuntimeException("Authentication required"));
 
-        AuthUser user = validateTokenAndGetUser("Bearer " + token);
+            // Get user info using the token
+            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
+            AuthUser user = authService.getUserInfo(cognitoUsername);
 
-        // Extract cognito:groups from JWT token instead of using stored roles
-        List<String> cognitoGroups = jwtTokenService.extractCognitoGroupsFromToken(token);
+            // Extract cognito:groups from JWT token for current roles
+            List<String> cognitoGroups = jwtTokenService.extractCognitoGroupsFromToken(token);
 
-        // Convert string groups to UserRole enums
-        List<UserRole> roles = new ArrayList<>();
-        for (String group : cognitoGroups) {
-            try {
-                UserRole role = UserRole.valueOf(group.toUpperCase());
-                roles.add(role);
-            } catch (IllegalArgumentException e) {
-                // Skip unknown roles, or default to USER
-                System.err.println("Unknown role from Cognito: " + group);
+            // Convert string groups to UserRole enums
+            List<UserRole> roles = new ArrayList<>();
+            for (String group : cognitoGroups) {
+                try {
+                    UserRole role = UserRole.valueOf(group.toUpperCase());
+                    roles.add(role);
+                } catch (IllegalArgumentException e) {
+                    System.err.println("Unknown role from Cognito: " + group);
+                }
             }
+
+            // If no valid roles found, default to USER
+            if (roles.isEmpty()) {
+                roles.add(UserRole.USER);
+            }
+
+            user.setRoles(roles);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    "User information retrieved successfully", user));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to get user info: " + e.getMessage()));
         }
-
-        // If no valid roles found, default to USER
-        if (roles.isEmpty()) {
-            roles.add(UserRole.USER);
-        }
-
-        user.setRoles(roles);
-
-        ApiResponse<AuthUser> response = ApiResponse.success(
-                "User information retrieved successfully",
-                user);
-        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/logout")
@@ -194,30 +201,39 @@ public class AuthController {
     }
 
     @GetMapping("/status")
-    public ResponseEntity<ApiResponse<StatusResponse>> status(
-            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+    @PreAuthorize("@authSecurityService.isAuthenticated()")
+    public ResponseEntity<ApiResponse<StatusResponse>> status(HttpServletRequest request) {
+        try {
+            // Get current user ID from security service
+            String userId = authSecurityService.getCurrentUserId();
+            
+            // Get user info
+            AuthUser user = authService.getUserInfo(userId);
 
-        AuthUser user = validateTokenAndGetUser(authHeader);
+            StatusResponse statusResponse = new StatusResponse(
+                    user.getStatus() != null ? user.getStatus().toString() : "ACTIVE");
 
-        StatusResponse statusResponse = new StatusResponse(
-                user.getStatus() != null ? user.getStatus().toString() : "ACTIVE");
-
-        ApiResponse<StatusResponse> response = ApiResponse.success(
-                "User status retrieved successfully",
-                statusResponse);
-        return ResponseEntity.ok(response);
+            return ResponseEntity.ok(ApiResponse.success(
+                    "User status retrieved successfully", statusResponse));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to get user status: " + e.getMessage()));
+        }
     }
 
     @GetMapping("/roles")
+    @PreAuthorize("@authSecurityService.isAuthenticated()")
     public ResponseEntity<ApiResponse<GetRoleResponse>> getUserRoles(HttpServletRequest request) {
         try {
-            // Get token from cookie instead of Authorization header
+            // Get token from cookie - @PreAuthorize already validates authentication
             String token = cookieUtil.getAccessTokenFromCookies(request)
                     .orElseThrow(() -> new RuntimeException("Authentication required"));
 
-            AuthUser user = validateTokenAndGetUser("Bearer " + token);
+            // Get user info
+            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
+            AuthUser user = authService.getUserInfo(cognitoUsername);
 
-            // Extract cognito:groups from JWT token instead of using stored roles
+            // Extract cognito:groups from JWT token for current roles
             List<String> cognitoGroups = jwtTokenService.extractCognitoGroupsFromToken(token);
 
             // Convert string groups to UserRole enums
@@ -227,7 +243,6 @@ public class AuthController {
                     UserRole role = UserRole.valueOf(group.toUpperCase());
                     roles.add(role);
                 } catch (IllegalArgumentException e) {
-                    // Skip unknown roles, or default to USER
                     System.err.println("Unknown role from Cognito: " + group);
                 }
             }
@@ -239,97 +254,38 @@ public class AuthController {
 
             GetRoleResponse roleResponse = new GetRoleResponse(user.getUsername(), user.getEmail(), roles);
 
-            ApiResponse<GetRoleResponse> response = ApiResponse.success(
-                    "User roles retrieved successfully",
-                    roleResponse);
-            return ResponseEntity.ok(response);
-        } catch (InvalidTokenException e) {
-            ApiResponse<GetRoleResponse> response = ApiResponse.error("Invalid token: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+            return ResponseEntity.ok(ApiResponse.success(
+                    "User roles retrieved successfully", roleResponse));
         } catch (Exception e) {
-            ApiResponse<GetRoleResponse> response = ApiResponse.error("Failed to get user roles: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to get user roles: " + e.getMessage()));
         }
     }
 
     @PostMapping("/change-password")
+    @PreAuthorize("@authSecurityService.isAuthenticated()")
     public ResponseEntity<ApiResponse<String>> changePassword(
             HttpServletRequest request,
-            @Valid @RequestBody ChangePasswordRequest request1) {
+            @Valid @RequestBody ChangePasswordRequest changePasswordRequest) {
         try {
-            // Get token from cookie instead of Authorization header
+            // Get token from cookie - @PreAuthorize already validates authentication
             String token = cookieUtil.getAccessTokenFromCookies(request)
                     .orElseThrow(() -> new RuntimeException("Authentication required"));
 
             String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
 
-            authService.changePassword(cognitoUsername, request1.getCurrentPassword(), request1.getNewPassword());
+            authService.changePassword(cognitoUsername, 
+                    changePasswordRequest.getCurrentPassword(), 
+                    changePasswordRequest.getNewPassword());
 
-            ApiResponse<String> response = ApiResponse.success(
-                    "Password changed successfully",
-                    "PASSWORD_CHANGED");
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(ApiResponse.success(
+                    "Password changed successfully", "PASSWORD_CHANGED"));
         } catch (SecurityException e) {
-            ApiResponse<String> response = ApiResponse.error("Current password is incorrect");
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-        } catch (InvalidTokenException e) {
-            ApiResponse<String> response = ApiResponse.error("Invalid token: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Current password is incorrect"));
         } catch (Exception e) {
-            ApiResponse<String> response = ApiResponse.error("Failed to change password: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to change password: " + e.getMessage()));
         }
-    }
-
-    // ===============================
-    // UTILITY METHODS (Reusable)
-    // ===============================
-
-    /**
-     * Validates authorization header and extracts JWT token
-     * 
-     * @param authHeader Authorization header from request
-     * @return Validated JWT token
-     * @throws InvalidTokenException if token is invalid or missing
-     */
-    private String validateAndExtractToken(String authHeader) {
-        if (authHeader == null || authHeader.trim().isEmpty()) {
-            throw new InvalidTokenException(AuthConstants.ErrorMessages.AUTHORIZATION_REQUIRED);
-        }
-
-        String token = jwtTokenService.extractTokenFromHeader(authHeader);
-        if (token == null || !jwtTokenService.isValidToken(token)) {
-            throw new InvalidTokenException(AuthConstants.ErrorMessages.INVALID_TOKEN);
-        }
-
-        return token;
-    }
-
-    /**
-     * Extracts Cognito username from JWT token and retrieves user info
-     * 
-     * @param token Validated JWT token
-     * @return User object with complete information
-     * @throws InvalidTokenException if user extraction fails
-     */
-    private AuthUser extractUserFromToken(String token) {
-        try {
-            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
-            return authService.getUserInfo(cognitoUsername);
-        } catch (Exception e) {
-            throw new InvalidTokenException(AuthConstants.ErrorMessages.FAILED_TO_EXTRACT_USER_INFO);
-        }
-    }
-
-    /**
-     * Complete token validation and user extraction in one step
-     * 
-     * @param authHeader Authorization header from request
-     * @return User object with complete information
-     * @throws InvalidTokenException if validation fails
-     */
-    private AuthUser validateTokenAndGetUser(String authHeader) {
-        String token = validateAndExtractToken(authHeader);
-        return extractUserFromToken(token);
     }
 }
