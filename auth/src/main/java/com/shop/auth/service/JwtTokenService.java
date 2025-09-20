@@ -2,6 +2,7 @@ package com.shop.auth.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.shop.auth.constants.AuthConstants;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -67,12 +68,12 @@ public class JwtTokenService {
             }
 
             // Fallback to 'email' field if 'username' is not present
-            JsonNode emailNode = payload.get("email");
+            JsonNode emailNode = payload.get(AuthConstants.JwtClaims.EMAIL);
             if (emailNode != null) {
                 return emailNode.asText();
             }
 
-            throw new RuntimeException("Username/email not found in token");
+            throw new RuntimeException(AuthConstants.ErrorMessages.USERNAME_EMAIL_NOT_FOUND_IN_TOKEN);
         } catch (Exception e) {
             throw new RuntimeException("Failed to extract username from token", e);
         }
@@ -86,12 +87,12 @@ public class JwtTokenService {
         try {
             JsonNode payload = extractPayloadFromToken(token);
             // For Cognito tokens, custom attributes are stored with 'custom:' prefix
-            JsonNode customUsernameNode = payload.get("custom:username");
+            JsonNode customUsernameNode = payload.get(AuthConstants.JwtClaims.CUSTOM_USERNAME);
             if (customUsernameNode != null) {
                 return customUsernameNode.asText();
             }
 
-            throw new RuntimeException("Custom username not found in token");
+            throw new RuntimeException(AuthConstants.ErrorMessages.CUSTOM_USERNAME_NOT_FOUND);
         } catch (Exception e) {
             throw new RuntimeException("Failed to extract custom username from token", e);
         }
@@ -181,7 +182,7 @@ public class JwtTokenService {
             // Split the token into parts (header.payload.signature)
             String[] tokenParts = token.split("\\.");
             if (tokenParts.length != 3) {
-                throw new RuntimeException("Invalid JWT token format");
+                throw new RuntimeException(AuthConstants.ErrorMessages.INVALID_JWT_FORMAT);
             }
 
             // Decode the payload (second part)

@@ -1,5 +1,6 @@
 package com.shop.auth.controller;
 
+import com.shop.auth.constants.AuthConstants;
 import com.shop.auth.dto.*;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.exception.InvalidTokenException;
@@ -7,6 +8,7 @@ import com.shop.auth.model.AuthUser;
 import com.shop.auth.service.AuthService;
 import com.shop.auth.service.JwtTokenService;
 import com.shop.auth.util.CookieUtil;
+import com.shop.auth.util.ResponseUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -29,11 +31,7 @@ public class AuthController {
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<AuthUser>> signup(@Valid @RequestBody SignupRequest request) {
         AuthUser user = authService.signup(request);
-
-        ApiResponse<AuthUser> response = ApiResponse.success(
-                "User registered successfully. Please check your email for verification code.",
-                user);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        return ResponseUtil.created(AuthConstants.SuccessMessages.USER_REGISTERED, user);
     }
 
     @PostMapping("/signin")
@@ -49,22 +47,15 @@ public class AuthController {
         // Return success response without tokens
         AuthSuccessResponse successResponse = AuthSuccessResponse.success(
                 authResponse.getUser(),
-                "User signed in successfully");
+                AuthConstants.SuccessMessages.USER_SIGNED_IN);
 
-        ApiResponse<AuthSuccessResponse> response_ = ApiResponse.success(
-                "User signed in successfully",
-                successResponse);
-        return ResponseEntity.ok(response_);
+        return ResponseUtil.ok(AuthConstants.SuccessMessages.USER_SIGNED_IN, successResponse);
     }
 
     @PostMapping("/verify")
     public ResponseEntity<ApiResponse<AuthUser>> verify(@Valid @RequestBody VerifyRequest request) {
         AuthUser user = authService.verify(request);
-
-        ApiResponse<AuthUser> response = ApiResponse.success(
-                "User verified successfully",
-                user);
-        return ResponseEntity.ok(response);
+        return ResponseUtil.ok(AuthConstants.SuccessMessages.EMAIL_VERIFIED, user);
     }
 
     @GetMapping("/me")
@@ -303,12 +294,12 @@ public class AuthController {
      */
     private String validateAndExtractToken(String authHeader) {
         if (authHeader == null || authHeader.trim().isEmpty()) {
-            throw new InvalidTokenException("Authorization header is required");
+            throw new InvalidTokenException(AuthConstants.ErrorMessages.AUTHORIZATION_REQUIRED);
         }
 
         String token = jwtTokenService.extractTokenFromHeader(authHeader);
         if (token == null || !jwtTokenService.isValidToken(token)) {
-            throw new InvalidTokenException("Invalid or expired token");
+            throw new InvalidTokenException(AuthConstants.ErrorMessages.INVALID_TOKEN);
         }
 
         return token;
@@ -326,7 +317,7 @@ public class AuthController {
             String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
             return authService.getUserInfo(cognitoUsername);
         } catch (Exception e) {
-            throw new InvalidTokenException("Failed to extract user information from token");
+            throw new InvalidTokenException(AuthConstants.ErrorMessages.FAILED_TO_EXTRACT_USER_INFO);
         }
     }
 

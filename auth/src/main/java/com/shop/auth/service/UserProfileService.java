@@ -1,5 +1,7 @@
 package com.shop.auth.service;
 
+import com.shop.auth.constants.AuthConstants;
+import com.shop.auth.exception.UserNotFoundException;
 import com.shop.auth.model.User;
 import com.shop.auth.model.AuthUser;
 import com.shop.auth.enums.Theme;
@@ -130,11 +132,11 @@ public class UserProfileService {
     public User softDeleteUser(String userId) {
         User user = getUserProfile(userId);
         if (user == null) {
-            throw new RuntimeException("User not found with ID: " + userId);
+            throw new UserNotFoundException(AuthConstants.ErrorMessages.USER_NOT_FOUND + " with ID: " + userId);
         }
 
         if (user.getDeleteStatus().getIsDeleted()) {
-            throw new RuntimeException("User is already deleted");
+            throw new RuntimeException(AuthConstants.ErrorMessages.USER_ALREADY_DELETED);
         }
 
         User.DeleteStatus deleteStatus = user.getDeleteStatus();
@@ -156,11 +158,11 @@ public class UserProfileService {
     public User restoreUser(String userId) {
         User user = getUserProfile(userId);
         if (user == null) {
-            throw new RuntimeException("User not found with ID: " + userId);
+            throw new UserNotFoundException(AuthConstants.ErrorMessages.USER_NOT_FOUND + " with ID: " + userId);
         }
 
         if (!user.getDeleteStatus().getIsDeleted()) {
-            throw new RuntimeException("User is not deleted");
+            throw new RuntimeException(AuthConstants.ErrorMessages.USER_NOT_DELETED);
         }
 
         User.DeleteStatus deleteStatus = user.getDeleteStatus();

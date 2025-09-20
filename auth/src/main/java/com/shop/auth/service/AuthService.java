@@ -1,22 +1,21 @@
 package com.shop.auth.service;
 
 import com.shop.auth.config.CognitoConfig;
+import com.shop.auth.constants.AuthConstants;
 import com.shop.auth.dto.AuthResponse;
 import com.shop.auth.dto.SigninRequest;
 import com.shop.auth.dto.SignupRequest;
 import com.shop.auth.dto.VerifyRequest;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.enums.UserStatus;
+import com.shop.auth.exception.CognitoExceptionHandler;
 import com.shop.auth.model.AuthUser;
+import com.shop.auth.util.CognitoUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
@@ -30,6 +29,7 @@ public class AuthService {
     private final CognitoIdentityProviderClient cognitoClient;
     private final CognitoConfig cognitoConfig;
     private final UserProfileService userProfileService;
+    private final CognitoUtil cognitoUtil;
 
     public AuthUser signup(SignupRequest request) {
         try {
@@ -38,21 +38,17 @@ public class AuthService {
 
             // Create user attributes
             Map<String, String> userAttributes = new HashMap<>();
-            userAttributes.put("email", request.getEmail());
-            userAttributes.put("name", request.getName());
+            userAttributes.put(AuthConstants.CognitoAttributes.EMAIL, request.getEmail());
+            userAttributes.put(AuthConstants.CognitoAttributes.NAME, request.getName());
             // Store all roles as comma-separated string in custom:role
             String rolesString = request.getRoles().stream()
                     .map(UserRole::name)
                     .collect(Collectors.joining(","));
-            userAttributes.put("custom:role", rolesString);
-            userAttributes.put("custom:username", request.getUsername()); // Store custom username as attribute
+            userAttributes.put(AuthConstants.CognitoAttributes.CUSTOM_ROLE, rolesString);
+            userAttributes.put(AuthConstants.CognitoAttributes.CUSTOM_USERNAME, request.getUsername());
 
             // Calculate secret hash if client secret is provided
-            String secretHash = null;
-            if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                secretHash = calculateSecretHash(request.getEmail()); // Use email for secret hash since Cognito uses
-                                                                      // email as username
-            }
+            String secretHash = cognitoUtil.calculateSecretHash(request.getEmail());
 
             // Build the signup request using email as username (as per Cognito
             // configuration)
@@ -104,9 +100,11 @@ public class AuthService {
             return user;
 
         } catch (CognitoIdentityProviderException e) {
-            throw new RuntimeException("Failed to create user: " + e.awsErrorDetails().errorMessage());
+            CognitoExceptionHandler.handleCognitoException(e, "User signup");
+            return null; // This will never be reached due to exception throwing
         } catch (Exception e) {
-            throw new RuntimeException("Signup failed: " + e.getMessage());
+            CognitoExceptionHandler.handleGenericException(e, "User signup");
+            return null; // This will never be reached due to exception throwing
         }
     }
 
@@ -174,10 +172,7 @@ public class AuthService {
             String userEmail = findEmailByCustomUsername(request.getUsername());
 
             // Calculate secret hash using the email (actual Cognito username)
-            String secretHash = null;
-            if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                secretHash = calculateSecretHash(userEmail);
-            }
+            String secretHash = cognitoUtil.calculateSecretHash(userEmail);
 
             // Build auth parameters using email as username
             Map<String, String> authParameters = new HashMap<>();
@@ -197,7 +192,8 @@ public class AuthService {
             AdminInitiateAuthResponse authResponse = cognitoClient.adminInitiateAuth(authRequest);
 
             if (authResponse.challengeName() != null) {
-                throw new RuntimeException("Authentication challenge required: " + authResponse.challengeName());
+                throw new RuntimeException(AuthConstants.ErrorMessages.AUTHENTICATION_CHALLENGE_REQUIRED + ": "
+                        + authResponse.challengeName());
             }
 
             // Get user attributes using the email
@@ -215,9 +211,11 @@ public class AuthService {
                     userWithCustomUsername);
 
         } catch (CognitoIdentityProviderException e) {
-            throw new RuntimeException("Sign in failed: " + e.awsErrorDetails().errorMessage());
+            CognitoExceptionHandler.handleCognitoException(e, "User signin");
+            return null; // This will never be reached due to exception throwing
         } catch (Exception e) {
-            throw new RuntimeException("Sign in failed: " + e.getMessage());
+            CognitoExceptionHandler.handleGenericException(e, "User signin");
+            return null; // This will never be reached due to exception throwing
         }
     }
 
@@ -227,10 +225,7 @@ public class AuthService {
             String userEmail = findEmailByCustomUsername(request.getUsername());
 
             // Calculate secret hash using the email (actual Cognito username)
-            String secretHash = null;
-            if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                secretHash = calculateSecretHash(userEmail);
-            }
+            String secretHash = cognitoUtil.calculateSecretHash(userEmail);
 
             ConfirmSignUpRequest.Builder confirmSignUpBuilder = ConfirmSignUpRequest.builder()
                     .clientId(cognitoConfig.getClientId())
@@ -256,9 +251,11 @@ public class AuthService {
             return createUserBasedOnExisting(user, request.getUsername());
 
         } catch (CognitoIdentityProviderException e) {
-            throw new RuntimeException("Verification failed: " + e.awsErrorDetails().errorMessage());
+            CognitoExceptionHandler.handleCognitoException(e, "Email verification");
+            return null; // This will never be reached due to exception throwing
         } catch (Exception e) {
-            throw new RuntimeException("Verification failed: " + e.getMessage());
+            CognitoExceptionHandler.handleGenericException(e, "Email verification");
+            return null; // This will never be reached due to exception throwing
         }
     }
 
@@ -374,10 +371,7 @@ public class AuthService {
     public void forgotPassword(String email) {
         try {
             // Calculate secret hash if client secret is provided
-            String secretHash = null;
-            if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                secretHash = calculateSecretHash(email);
-            }
+            String secretHash = cognitoUtil.calculateSecretHash(email);
 
             ForgotPasswordRequest.Builder forgotPasswordBuilder = ForgotPasswordRequest.builder()
                     .clientId(cognitoConfig.getClientId())
@@ -390,19 +384,16 @@ public class AuthService {
             cognitoClient.forgotPassword(forgotPasswordBuilder.build());
 
         } catch (CognitoIdentityProviderException e) {
-            throw new RuntimeException("Failed to send reset code: " + e.awsErrorDetails().errorMessage());
+            CognitoExceptionHandler.handleCognitoException(e, "Password reset request");
         } catch (Exception e) {
-            throw new RuntimeException("Failed to send reset code: " + e.getMessage());
+            CognitoExceptionHandler.handleGenericException(e, "Password reset request");
         }
     }
 
     public void resetPassword(String email, String verificationCode, String newPassword) {
         try {
             // Calculate secret hash if client secret is provided
-            String secretHash = null;
-            if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                secretHash = calculateSecretHash(email);
-            }
+            String secretHash = cognitoUtil.calculateSecretHash(email);
 
             ConfirmForgotPasswordRequest.Builder confirmForgotPasswordBuilder = ConfirmForgotPasswordRequest.builder()
                     .clientId(cognitoConfig.getClientId())
@@ -417,19 +408,16 @@ public class AuthService {
             cognitoClient.confirmForgotPassword(confirmForgotPasswordBuilder.build());
 
         } catch (CognitoIdentityProviderException e) {
-            throw new RuntimeException("Failed to reset password: " + e.awsErrorDetails().errorMessage());
+            CognitoExceptionHandler.handleCognitoException(e, "Password reset");
         } catch (Exception e) {
-            throw new RuntimeException("Failed to reset password: " + e.getMessage());
+            CognitoExceptionHandler.handleGenericException(e, "Password reset");
         }
     }
 
     public void resendVerificationCode(String email) {
         try {
             // Calculate secret hash if client secret is provided
-            String secretHash = null;
-            if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                secretHash = calculateSecretHash(email);
-            }
+            String secretHash = cognitoUtil.calculateSecretHash(email);
 
             ResendConfirmationCodeRequest.Builder resendCodeBuilder = ResendConfirmationCodeRequest.builder()
                     .clientId(cognitoConfig.getClientId())
@@ -442,9 +430,9 @@ public class AuthService {
             cognitoClient.resendConfirmationCode(resendCodeBuilder.build());
 
         } catch (CognitoIdentityProviderException e) {
-            throw new RuntimeException("Failed to resend verification code: " + e.awsErrorDetails().errorMessage());
+            CognitoExceptionHandler.handleCognitoException(e, "Resend verification code");
         } catch (Exception e) {
-            throw new RuntimeException("Failed to resend verification code: " + e.getMessage());
+            CognitoExceptionHandler.handleGenericException(e, "Resend verification code");
         }
     }
 
@@ -642,21 +630,6 @@ public class AuthService {
         }
     }
 
-    private String calculateSecretHash(String username) {
-        try {
-            String message = username + cognitoConfig.getClientId();
-            Mac sha256Hmac = Mac.getInstance("HmacSHA256");
-            SecretKeySpec secretKey = new SecretKeySpec(
-                    cognitoConfig.getClientSecret().getBytes(StandardCharsets.UTF_8),
-                    "HmacSHA256");
-            sha256Hmac.init(secretKey);
-            byte[] hash = sha256Hmac.doFinal(message.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(hash);
-        } catch (Exception e) {
-            throw new RuntimeException("Error calculating secret hash", e);
-        }
-    }
-
     public void changePassword(String usernameOrEmail, String currentPassword, String newPassword) {
         try {
             // Determine if it's an email or Cognito username
@@ -677,7 +650,7 @@ public class AuthService {
                     .authParameters(Map.of(
                             "USERNAME", cognitoUsername,
                             "PASSWORD", currentPassword,
-                            "SECRET_HASH", calculateSecretHash(cognitoUsername)))
+                            "SECRET_HASH", cognitoUtil.calculateSecretHash(cognitoUsername)))
                     .build();
 
             // This will throw an exception if current password is wrong
@@ -800,8 +773,9 @@ public class AuthService {
             authParams.put("REFRESH_TOKEN", refreshToken);
 
             // For refresh token, we need SECRET_HASH if client secret is configured
-            if (cognitoConfig.getClientSecret() != null && !cognitoConfig.getClientSecret().isEmpty()) {
-                authParams.put("SECRET_HASH", calculateSecretHash(username));
+            String secretHash = cognitoUtil.calculateSecretHash(username);
+            if (secretHash != null) {
+                authParams.put("SECRET_HASH", secretHash);
             }
 
             InitiateAuthRequest authRequest = InitiateAuthRequest.builder()

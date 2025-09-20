@@ -1,6 +1,8 @@
 package com.shop.auth.controller;
 
+import com.shop.auth.constants.AuthConstants;
 import com.shop.auth.dto.ApiResponse;
+import com.shop.auth.util.ResponseUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,7 +23,6 @@ public class HealthController {
         healthData.put("service", serviceName);
         healthData.put("status", "UP");
 
-        ApiResponse<Map<String, Object>> response = ApiResponse.success("Service is healthy", healthData);
-        return ResponseEntity.ok(response);
+        return ResponseUtil.ok(AuthConstants.StatusMessages.HEALTH_OK, healthData);
     }
 }
