@@ -1,6 +1,6 @@
 package com.shop.auth.dto;
 
-import com.shop.auth.model.User;
+import com.shop.auth.model.AuthUser;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,11 +11,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AuthSuccessResponse {
-    private User user;
+    private AuthUser user;
     private String message;
     private boolean requiresVerification;
     
-    public static AuthSuccessResponse success(User user, String message) {
+    public static AuthSuccessResponse success(AuthUser user, String message) {
         return AuthSuccessResponse.builder()
                 .user(user)
                 .message(message)
@@ -23,7 +23,7 @@ public class AuthSuccessResponse {
                 .build();
     }
     
-    public static AuthSuccessResponse requiresVerification(User user, String message) {
+    public static AuthSuccessResponse requiresVerification(AuthUser user, String message) {
         return AuthSuccessResponse.builder()
                 .user(user)
                 .message(message)

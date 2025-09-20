@@ -7,7 +7,7 @@ import com.shop.auth.dto.SignupRequest;
 import com.shop.auth.dto.VerifyRequest;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.enums.UserStatus;
-import com.shop.auth.model.User;
+import com.shop.auth.model.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
@@ -31,7 +31,7 @@ public class AuthService {
     private final CognitoConfig cognitoConfig;
     private final UserProfileService userProfileService;
 
-    public User signup(SignupRequest request) {
+    public AuthUser signup(SignupRequest request) {
         try {
             // Improved username validation
             validateUsername(request.getUsername(), request.getEmail());
@@ -70,7 +70,7 @@ public class AuthService {
 
             SignUpResponse signUpResponse = cognitoClient.signUp(signUpBuilder.build());
 
-            User user = createUserWithDefaultStatus(
+            AuthUser user = createUserWithDefaultStatus(
                     signUpResponse.userSub(), // Set the Cognito UUID as userId
                     request.getUsername(), // Keep the custom username in our system
                     request.getName(),
@@ -129,13 +129,13 @@ public class AuthService {
             }
 
             // Get user attributes using the email
-            User user = getUserInfo(userEmail);
+            AuthUser user = getUserInfo(userEmail);
 
             // Update last login timestamp in DynamoDB
             userProfileService.updateLastLogin(user.getUserId());
 
             // Replace the email with the custom username in the response
-            User userWithCustomUsername = createUserBasedOnExisting(user, request.getUsername());
+            AuthUser userWithCustomUsername = createUserBasedOnExisting(user, request.getUsername());
 
             return new AuthResponse(
                     authResponse.authenticationResult().accessToken(),
@@ -149,7 +149,7 @@ public class AuthService {
         }
     }
 
-    public User verify(VerifyRequest request) {
+    public AuthUser verify(VerifyRequest request) {
         try {
             // Find the user's email (actual Cognito username) by their custom username
             String userEmail = findEmailByCustomUsername(request.getUsername());
@@ -172,7 +172,7 @@ public class AuthService {
             cognitoClient.confirmSignUp(confirmSignUpBuilder.build());
 
             // Get user info and replace email with custom username
-            User user = getUserInfo(userEmail);
+            AuthUser user = getUserInfo(userEmail);
 
             // Update verification status in DynamoDB
             userProfileService.updateVerificationStatus(user.getUserId(), true);
@@ -186,7 +186,7 @@ public class AuthService {
         }
     }
 
-    public User getUserInfo(String username) {
+    public AuthUser getUserInfo(String username) {
         try {
             AdminGetUserRequest getUserRequest = AdminGetUserRequest.builder()
                     .userPoolId(cognitoConfig.getUserPoolId())
@@ -372,13 +372,13 @@ public class AuthService {
         }
     }
 
-    public User getUserInfoByCustomUsername(String customUsername) {
+    public AuthUser getUserInfoByCustomUsername(String customUsername) {
         try {
             // Find the actual Cognito username first
             String actualCognitoUsername = findCognitoUsernameByCustomUsername(customUsername);
 
             // Get user info using the actual Cognito username
-            User user = getUserInfo(actualCognitoUsername);
+            AuthUser user = getUserInfo(actualCognitoUsername);
 
             // Replace the Cognito UUID with the custom username in the response
             return createUserBasedOnExisting(user, customUsername);
@@ -388,10 +388,10 @@ public class AuthService {
         }
     }
 
-    public User getUserInfoByEmail(String email) {
+    public AuthUser getUserInfoByEmail(String email) {
         try {
             // Find the actual Cognito username (which is the email) and get user info
-            User user = getUserInfo(email);
+            AuthUser user = getUserInfo(email);
 
             // Find the custom username for this email
             String customUsername = findCustomUsernameByEmail(email);
@@ -406,7 +406,7 @@ public class AuthService {
 
     public List<UserRole> getUserRoles(String email) {
         try {
-            User user = getUserInfo(email);
+            AuthUser user = getUserInfo(email);
             return user.getRoles();
         } catch (Exception e) {
             throw new RuntimeException("Failed to get user roles: " + e.getMessage());
@@ -417,7 +417,7 @@ public class AuthService {
         try {
             // Check if requester has ADMIN role
             // requesterIdentifier could be either email or Cognito username (UUID)
-            User requester;
+            AuthUser requester;
             if (requesterIdentifier.contains("@")) {
                 // It's an email
                 requester = getUserInfoByEmail(requesterIdentifier);
@@ -431,7 +431,7 @@ public class AuthService {
             }
 
             // Get target user (email is always email in this method)
-            User user = getUserInfoByEmail(email);
+            AuthUser user = getUserInfoByEmail(email);
             if (user == null) {
                 throw new RuntimeException("User not found with email: " + email);
             }
@@ -687,7 +687,7 @@ public class AuthService {
      * @param user User object that may have null status
      * @return UserStatus, defaulting to ACTIVE if null
      */
-    private UserStatus getStatusOrDefault(User user) {
+    private UserStatus getStatusOrDefault(AuthUser user) {
         return user.getStatus() != null ? user.getStatus() : UserStatus.ACTIVE;
     }
 
@@ -702,9 +702,9 @@ public class AuthService {
      * @param roles      User roles
      * @return User object with default ACTIVE status
      */
-    private User createUserWithDefaultStatus(String userId, String username, String name,
+    private AuthUser createUserWithDefaultStatus(String userId, String username, String name,
             String email, boolean isVerified, List<UserRole> roles) {
-        return User.builder()
+        return AuthUser.builder()
                 .userId(userId)
                 .username(username)
                 .name(name)
@@ -757,8 +757,8 @@ public class AuthService {
      * @param username     New username (or null to keep existing)
      * @return User object with preserved status or default ACTIVE
      */
-    private User createUserBasedOnExisting(User existingUser, String username) {
-        return User.builder()
+    private AuthUser createUserBasedOnExisting(AuthUser existingUser, String username) {
+        return AuthUser.builder()
                 .userId(existingUser.getUserId())
                 .username(username != null ? username : existingUser.getUsername())
                 .name(existingUser.getName())

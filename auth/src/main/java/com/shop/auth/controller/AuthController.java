@@ -2,7 +2,7 @@ package com.shop.auth.controller;
 
 import com.shop.auth.dto.*;
 import com.shop.auth.exception.InvalidTokenException;
-import com.shop.auth.model.User;
+import com.shop.auth.model.AuthUser;
 import com.shop.auth.service.AuthService;
 import com.shop.auth.service.JwtTokenService;
 import com.shop.auth.util.CookieUtil;
@@ -23,10 +23,10 @@ public class AuthController {
     private final CookieUtil cookieUtil;
 
     @PostMapping("/signup")
-    public ResponseEntity<ApiResponse<User>> signup(@Valid @RequestBody SignupRequest request) {
-        User user = authService.signup(request);
+    public ResponseEntity<ApiResponse<AuthUser>> signup(@Valid @RequestBody SignupRequest request) {
+        AuthUser user = authService.signup(request);
 
-        ApiResponse<User> response = ApiResponse.success(
+        ApiResponse<AuthUser> response = ApiResponse.success(
                 "User registered successfully. Please check your email for verification code.",
                 user);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -54,24 +54,24 @@ public class AuthController {
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<ApiResponse<User>> verify(@Valid @RequestBody VerifyRequest request) {
-        User user = authService.verify(request);
+    public ResponseEntity<ApiResponse<AuthUser>> verify(@Valid @RequestBody VerifyRequest request) {
+        AuthUser user = authService.verify(request);
 
-        ApiResponse<User> response = ApiResponse.success(
+        ApiResponse<AuthUser> response = ApiResponse.success(
                 "User verified successfully",
                 user);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/me")
-    public ResponseEntity<ApiResponse<User>> getCurrentUser(HttpServletRequest request) {
+    public ResponseEntity<ApiResponse<AuthUser>> getCurrentUser(HttpServletRequest request) {
         // Get token from cookie instead of Authorization header
         String token = cookieUtil.getAccessTokenFromCookies(request)
                 .orElseThrow(() -> new RuntimeException("Authentication required"));
 
-        User user = validateTokenAndGetUser("Bearer " + token);
+        AuthUser user = validateTokenAndGetUser("Bearer " + token);
 
-        ApiResponse<User> response = ApiResponse.success(
+        ApiResponse<AuthUser> response = ApiResponse.success(
                 "User information retrieved successfully",
                 user);
         return ResponseEntity.ok(response);
@@ -180,7 +180,7 @@ public class AuthController {
     public ResponseEntity<ApiResponse<StatusResponse>> status(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        User user = validateTokenAndGetUser(authHeader);
+        AuthUser user = validateTokenAndGetUser(authHeader);
 
         StatusResponse statusResponse = new StatusResponse(
                 user.getStatus() != null ? user.getStatus().toString() : "ACTIVE");
@@ -198,7 +198,7 @@ public class AuthController {
             String token = cookieUtil.getAccessTokenFromCookies(request)
                     .orElseThrow(() -> new RuntimeException("Authentication required"));
 
-            User user = validateTokenAndGetUser("Bearer " + token);
+            AuthUser user = validateTokenAndGetUser("Bearer " + token);
             GetRoleResponse roleResponse = new GetRoleResponse(user.getUsername(), user.getEmail(), user.getRoles());
 
             ApiResponse<GetRoleResponse> response = ApiResponse.success(
@@ -274,7 +274,7 @@ public class AuthController {
      * @return User object with complete information
      * @throws InvalidTokenException if user extraction fails
      */
-    private User extractUserFromToken(String token) {
+    private AuthUser extractUserFromToken(String token) {
         try {
             String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
             return authService.getUserInfo(cognitoUsername);
@@ -290,7 +290,7 @@ public class AuthController {
      * @return User object with complete information
      * @throws InvalidTokenException if validation fails
      */
-    private User validateTokenAndGetUser(String authHeader) {
+    private AuthUser validateTokenAndGetUser(String authHeader) {
         String token = validateAndExtractToken(authHeader);
         return extractUserFromToken(token);
     }

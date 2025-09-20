@@ -1,7 +1,7 @@
 package com.shop.admin.controller;
 
 import com.shop.admin.dto.ApiResponse;
-import com.shop.admin.model.AdminUserProfile;
+import com.shop.admin.model.User;
 import com.shop.admin.service.UserService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,10 +19,10 @@ public class UserController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<AdminUserProfile>>> getAllUsers(
+    public ResponseEntity<ApiResponse<List<User>>> getAllUsers(
             @RequestParam(required = false) Integer limit) {
         try {
-            List<AdminUserProfile> users;
+            List<User> users;
             if (limit != null && limit > 0) {
                 users = userService.getAllUsers(limit);
             } else {

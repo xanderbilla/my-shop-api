@@ -1,6 +1,6 @@
 package com.shop.auth.repository;
 
-import com.shop.auth.model.AdminUserProfile;
+import com.shop.auth.model.User;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -15,25 +15,25 @@ import java.util.Optional;
 @Repository
 public class UserProfileRepository {
 
-    private final DynamoDbTable<AdminUserProfile> userProfileTable;
+    private final DynamoDbTable<User> userProfileTable;
 
     public UserProfileRepository(DynamoDbEnhancedClient enhancedClient,
             @Value("${aws.dynamodb.user-table}") String tableName) {
-        this.userProfileTable = enhancedClient.table(tableName, TableSchema.fromBean(AdminUserProfile.class));
+        this.userProfileTable = enhancedClient.table(tableName, TableSchema.fromBean(User.class));
     }
 
-    public void save(AdminUserProfile userProfile) {
+    public void save(User userProfile) {
         userProfileTable.putItem(userProfile);
     }
 
-    public Optional<AdminUserProfile> findByUserId(String userId) {
+    public Optional<User> findByUserId(String userId) {
         Key key = Key.builder().partitionValue(userId).build();
-        AdminUserProfile item = userProfileTable.getItem(r -> r.key(key));
+        User item = userProfileTable.getItem(r -> r.key(key));
         return Optional.ofNullable(item);
     }
 
-    public Optional<AdminUserProfile> findByUsername(String username) {
-        DynamoDbIndex<AdminUserProfile> usernameIndex = userProfileTable.index("username-index");
+    public Optional<User> findByUsername(String username) {
+        DynamoDbIndex<User> usernameIndex = userProfileTable.index("username-index");
 
         QueryConditional queryConditional = QueryConditional.keyEqualTo(
                 Key.builder().partitionValue(username).build());
@@ -44,8 +44,8 @@ public class UserProfileRepository {
                 .findFirst();
     }
 
-    public Optional<AdminUserProfile> findByEmail(String email) {
-        DynamoDbIndex<AdminUserProfile> emailIndex = userProfileTable.index("email-index");
+    public Optional<User> findByEmail(String email) {
+        DynamoDbIndex<User> emailIndex = userProfileTable.index("email-index");
 
         QueryConditional queryConditional = QueryConditional.keyEqualTo(
                 Key.builder().partitionValue(email).build());
@@ -56,7 +56,7 @@ public class UserProfileRepository {
                 .findFirst();
     }
 
-    public void update(AdminUserProfile userProfile) {
+    public void update(User userProfile) {
         userProfileTable.updateItem(userProfile);
     }
 

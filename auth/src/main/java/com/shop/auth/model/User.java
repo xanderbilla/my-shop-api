@@ -1,62 +1,125 @@
 package com.shop.auth.model;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.enums.UserStatus;
+import com.shop.auth.enums.FraudRisk;
+import com.shop.auth.enums.Theme;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbBean;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbPartitionKey;
+import software.amazon.awssdk.enhanced.dynamodb.mapper.annotations.DynamoDbSecondaryPartitionKey;
 
+import java.time.Instant;
 import java.util.List;
-import java.util.ArrayList;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@DynamoDbBean
 public class User {
-    private String userId; // Cognito UUID
-    private String username; // User-friendly username
-    private String name;
+
+    private String userId; // UUID
+    private String username;
+    private String custName; // name
     private String email;
+    private String phone;
+    private String gender; // MALE | FEMALE
+    private String profilePicture;
+    private Boolean verified;
+    private List<Address> addresses;
+    private Preferences preferences;
+    private AccountStats accountStats;
+    private UserRole role; // USER | ADMIN | SUPPORT
+    private UserStatus accountStatus; // ACTIVE | INACTIVE | BANNED
+    private Boolean kycVerified; // identity verification
+    private FraudRisk fraudRisk; // LOW | MEDIUM | HIGH
+    private Consent consent; // GDPR/consent flags
+    private Instant createdAt;
+    private Instant updatedAt;
+    private Instant lastLogin; // Last successful login timestamp
+    private String createdBy; // admin/system
+    private String updatedBy; // admin/system
+    private Boolean isActive; // quick toggle
 
-    @JsonProperty("verified")
-    private boolean isVerified;
-    private List<UserRole> roles;
-    private UserStatus status;
-
-    // Constructor for creating user without roles (defaults to USER)
-    public User(String userId, String username, String name, String email, boolean isVerified) {
-        this.userId = userId;
-        this.username = username;
-        this.name = name;
-        this.email = email;
-        this.isVerified = isVerified;
-        this.roles = new ArrayList<>();
-        this.roles.add(UserRole.USER);
-        this.status = UserStatus.ACTIVE; // Default status
+    @DynamoDbPartitionKey
+    public String getUserId() {
+        return userId;
     }
 
-    // Helper method to check if user has a specific role
-    public boolean hasRole(UserRole role) {
-        return roles != null && roles.contains(role);
+    @DynamoDbSecondaryPartitionKey(indexNames = "username-index")
+    public String getUsername() {
+        return username;
     }
 
-    // Helper method to add a role
-    public void addRole(UserRole role) {
-        if (roles == null) {
-            roles = new ArrayList<>();
-        }
-        if (!roles.contains(role)) {
-            roles.add(role);
+    @DynamoDbSecondaryPartitionKey(indexNames = "email-index")
+    public String getEmail() {
+        return email;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @DynamoDbBean
+    public static class Address {
+        private String id;
+        private String title;
+        private String street;
+        private String city;
+        private String state;
+        private String country;
+        private String zipCode;
+        private Boolean isDefault;
+        private String type; // HOME | WORK | OTHER
+        private Coordinates coordinates;
+
+        @Data
+        @Builder
+        @NoArgsConstructor
+        @AllArgsConstructor
+        @DynamoDbBean
+        public static class Coordinates {
+            private Double lat;
+            private Double lng;
         }
     }
 
-    // Helper method to remove a role
-    public void removeRole(UserRole role) {
-        if (roles != null) {
-            roles.remove(role);
-        }
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @DynamoDbBean
+    public static class Preferences {
+        private Boolean newsletter;
+        private Boolean notifications;
+        private String language;
+        private String currency;
+        private Theme theme; // LIGHT | DARK
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @DynamoDbBean
+    public static class AccountStats {
+        private Integer totalOrders;
+        private Double totalSpent;
+        private List<String> favoriteCategories;
+        private Integer wishlistCount;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @DynamoDbBean
+    public static class Consent {
+        private Boolean marketing;
+        private Boolean dataSharing;
     }
 }

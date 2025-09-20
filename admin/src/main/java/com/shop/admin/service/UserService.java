@@ -1,6 +1,6 @@
 package com.shop.admin.service;
 
-import com.shop.admin.model.AdminUserProfile;
+import com.shop.admin.model.User;
 import com.shop.admin.repository.UserProfileRepository;
 import org.springframework.stereotype.Service;
 
@@ -15,11 +15,11 @@ public class UserService {
         this.userProfileRepository = userProfileRepository;
     }
 
-    public List<AdminUserProfile> getAllUsers() {
+    public List<User> getAllUsers() {
         return userProfileRepository.getAllUsers();
     }
 
-    public List<AdminUserProfile> getAllUsers(int limit) {
+    public List<User> getAllUsers(int limit) {
         return userProfileRepository.getAllUsers(limit);
     }
 }

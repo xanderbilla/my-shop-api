@@ -1,6 +1,6 @@
 package com.shop.admin.repository;
 
-import com.shop.admin.model.AdminUserProfile;
+import com.shop.admin.model.User;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
@@ -14,21 +14,21 @@ import java.util.stream.Collectors;
 @Repository
 public class UserProfileRepository {
 
-    private final DynamoDbTable<AdminUserProfile> userProfileTable;
+    private final DynamoDbTable<User> userProfileTable;
 
     public UserProfileRepository(DynamoDbEnhancedClient enhancedClient,
             @Value("${aws.dynamodb.user-table}") String tableName) {
-        this.userProfileTable = enhancedClient.table(tableName, TableSchema.fromBean(AdminUserProfile.class));
+        this.userProfileTable = enhancedClient.table(tableName, TableSchema.fromBean(User.class));
     }
 
-    public List<AdminUserProfile> getAllUsers() {
+    public List<User> getAllUsers() {
         return userProfileTable.scan(ScanEnhancedRequest.builder().build())
                 .items()
                 .stream()
                 .collect(Collectors.toList());
     }
 
-    public List<AdminUserProfile> getAllUsers(int limit) {
+    public List<User> getAllUsers(int limit) {
         return userProfileTable.scan(ScanEnhancedRequest.builder().limit(limit).build())
                 .items()
                 .stream()

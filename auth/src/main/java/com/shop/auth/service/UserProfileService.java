@@ -1,7 +1,7 @@
 package com.shop.auth.service;
 
-import com.shop.auth.model.AdminUserProfile;
 import com.shop.auth.model.User;
+import com.shop.auth.model.AuthUser;
 import com.shop.auth.enums.Theme;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.enums.UserStatus;
@@ -21,8 +21,8 @@ public class UserProfileService {
         this.userProfileRepository = userProfileRepository;
     }
 
-    public AdminUserProfile createUserProfile(User user) {
-        AdminUserProfile userProfile = AdminUserProfile.builder()
+    public User createUserProfile(AuthUser user) {
+        User userProfile = User.builder()
                 .userId(user.getUserId())
                 .username(user.getUsername())
                 .custName(user.getName())
@@ -55,22 +55,22 @@ public class UserProfileService {
         return userProfile;
     }
 
-    public AdminUserProfile getUserProfile(String userId) {
+    public User getUserProfile(String userId) {
         return userProfileRepository.findByUserId(userId)
                 .orElse(null);
     }
 
-    public AdminUserProfile getUserProfileByUsername(String username) {
+    public User getUserProfileByUsername(String username) {
         return userProfileRepository.findByUsername(username)
                 .orElse(null);
     }
 
-    public AdminUserProfile getUserProfileByEmail(String email) {
+    public User getUserProfileByEmail(String email) {
         return userProfileRepository.findByEmail(email)
                 .orElse(null);
     }
 
-    public void updateUserProfile(AdminUserProfile userProfile) {
+    public void updateUserProfile(User userProfile) {
         userProfile.setUpdatedAt(Instant.now());
         userProfileRepository.update(userProfile);
     }
@@ -80,7 +80,7 @@ public class UserProfileService {
     }
 
     public void updateLastLogin(String userId) {
-        AdminUserProfile userProfile = getUserProfile(userId);
+        User userProfile = getUserProfile(userId);
         if (userProfile != null) {
             userProfile.setLastLogin(Instant.now());
             // Don't update updatedAt for login activity - only for profile data changes
@@ -89,7 +89,7 @@ public class UserProfileService {
     }
 
     public void updateVerificationStatus(String userId, boolean verified) {
-        AdminUserProfile userProfile = getUserProfile(userId);
+        User userProfile = getUserProfile(userId);
         if (userProfile != null) {
             userProfile.setVerified(verified);
             userProfile.setUpdatedAt(Instant.now());
@@ -97,8 +97,8 @@ public class UserProfileService {
         }
     }
 
-    private AdminUserProfile.Preferences createDefaultPreferences() {
-        return AdminUserProfile.Preferences.builder()
+    private User.Preferences createDefaultPreferences() {
+        return User.Preferences.builder()
                 .newsletter(false)
                 .notifications(true)
                 .language("en")
@@ -107,8 +107,8 @@ public class UserProfileService {
                 .build();
     }
 
-    private AdminUserProfile.AccountStats createDefaultAccountStats() {
-        return AdminUserProfile.AccountStats.builder()
+    private User.AccountStats createDefaultAccountStats() {
+        return User.AccountStats.builder()
                 .totalOrders(0)
                 .totalSpent(0.0)
                 .favoriteCategories(new ArrayList<>())
@@ -116,8 +116,8 @@ public class UserProfileService {
                 .build();
     }
 
-    private AdminUserProfile.Consent createDefaultConsent() {
-        return AdminUserProfile.Consent.builder()
+    private User.Consent createDefaultConsent() {
+        return User.Consent.builder()
                 .marketing(false)
                 .dataSharing(false)
                 .build();

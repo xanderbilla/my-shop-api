@@ -20,7 +20,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @DynamoDbBean
-public class AdminUserProfile {
+public class User {
 
     private String userId; // UUID
     private String username;
