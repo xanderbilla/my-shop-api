@@ -249,7 +249,7 @@ public class JwtTokenService {
             } else if (payloadNode.has("sub")) {
                 return payloadNode.get("sub").asText();
             }
-            
+
             return "unknown";
         } catch (Exception e) {
             System.err.println("Failed to extract username: " + e.getMessage());
@@ -269,7 +269,7 @@ public class JwtTokenService {
             if (payloadNode.has("custom:username")) {
                 return payloadNode.get("custom:username").asText();
             }
-            
+
             return "unknown";
         } catch (Exception e) {
             System.err.println("Failed to extract custom username: " + e.getMessage());
@@ -292,7 +292,7 @@ public class JwtTokenService {
             } else if (payloadNode.has("username")) {
                 return payloadNode.get("username").asText();
             }
-            
+
             return "unknown";
         } catch (Exception e) {
             System.err.println("Failed to extract email: " + e.getMessage());
@@ -314,7 +314,7 @@ public class JwtTokenService {
             } else if (payloadNode.has("sub")) {
                 return payloadNode.get("sub").asText();
             }
-            
+
             return "unknown";
         } catch (Exception e) {
             System.err.println("Failed to extract Cognito username: " + e.getMessage());
@@ -333,13 +333,13 @@ public class JwtTokenService {
 
             List<String> groups = new ArrayList<>();
             JsonNode cognitoGroupsNode = payloadNode.get("cognito:groups");
-            
+
             if (cognitoGroupsNode != null && cognitoGroupsNode.isArray()) {
                 for (JsonNode groupNode : cognitoGroupsNode) {
                     groups.add(groupNode.asText());
                 }
             }
-            
+
             return groups;
         } catch (Exception e) {
             System.err.println("Failed to extract Cognito groups: " + e.getMessage());

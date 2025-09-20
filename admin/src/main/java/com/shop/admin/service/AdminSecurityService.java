@@ -61,7 +61,8 @@ public class AdminSecurityService {
 
             // Step 2: Validate token integrity, signature, expiration, and issuer
             if (!jwtTokenService.isValidToken(accessToken)) {
-                System.err.println("SECURITY ALERT: Access denied - Invalid or expired token (failed JWKS signature verification)");
+                System.err.println(
+                        "SECURITY ALERT: Access denied - Invalid or expired token (failed JWKS signature verification)");
                 return false;
             }
 
@@ -70,7 +71,8 @@ public class AdminSecurityService {
             if (userGroups == null || userGroups.isEmpty()) {
                 try {
                     String username = jwtTokenService.extractUsernameFromToken(accessToken);
-                    System.err.println("SECURITY ALERT: Access denied - User '" + username + "' has no Cognito groups assigned");
+                    System.err.println(
+                            "SECURITY ALERT: Access denied - User '" + username + "' has no Cognito groups assigned");
                 } catch (Exception e) {
                     System.err.println("SECURITY ALERT: Access denied - No Cognito groups found in token");
                 }
@@ -81,10 +83,11 @@ public class AdminSecurityService {
             if (!userGroups.contains("ADMIN")) {
                 try {
                     String username = jwtTokenService.extractUsernameFromToken(accessToken);
-                    System.err.println("SECURITY ALERT: Access denied - User '" + username 
+                    System.err.println("SECURITY ALERT: Access denied - User '" + username
                             + "' attempted admin access with groups " + userGroups + " (ADMIN group required)");
                 } catch (Exception e) {
-                    System.err.println("SECURITY ALERT: Access denied - User has groups " + userGroups + " but ADMIN group required");
+                    System.err.println("SECURITY ALERT: Access denied - User has groups " + userGroups
+                            + " but ADMIN group required");
                 }
                 return false;
             }
@@ -92,7 +95,8 @@ public class AdminSecurityService {
             // Access granted - log successful admin access
             try {
                 String adminUsername = jwtTokenService.extractUsernameFromToken(accessToken);
-                System.out.println("ADMIN ACCESS GRANTED: User '" + adminUsername + "' authenticated successfully with ADMIN group");
+                System.out.println("ADMIN ACCESS GRANTED: User '" + adminUsername
+                        + "' authenticated successfully with ADMIN group");
             } catch (Exception e) {
                 System.out.println("ADMIN ACCESS GRANTED: Admin user authenticated successfully");
             }
@@ -171,14 +175,14 @@ public class AdminSecurityService {
 
             List<String> userGroups = jwtTokenService.extractCognitoGroupsFromToken(accessToken);
             String username = jwtTokenService.extractUsernameFromToken(accessToken);
-            
+
             boolean hasAdminAccess = userGroups != null && userGroups.contains("ADMIN");
-            
+
             // Detailed audit logging
-            System.out.println("ADMIN ACCESS VALIDATION: User '" + username + 
-                             "', Groups: " + userGroups + 
-                             ", Access Granted: " + hasAdminAccess);
-                             
+            System.out.println("ADMIN ACCESS VALIDATION: User '" + username +
+                    "', Groups: " + userGroups +
+                    ", Access Granted: " + hasAdminAccess);
+
             return hasAdminAccess;
         } catch (Exception e) {
             System.err.println("Admin access validation error: " + e.getMessage());

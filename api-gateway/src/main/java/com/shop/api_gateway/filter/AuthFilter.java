@@ -38,7 +38,7 @@ public class AuthFilter extends AbstractGatewayFilterFactory<AuthFilter.Config> 
 
             // Extract token from cookies
             String token = extractTokenFromCookies(request);
-            
+
             if (token == null) {
                 System.err.println("GATEWAY SECURITY: No access token found for " + request.getPath());
                 response.setStatusCode(HttpStatus.UNAUTHORIZED);
@@ -64,7 +64,7 @@ public class AuthFilter extends AbstractGatewayFilterFactory<AuthFilter.Config> 
 
                 if (!hasRequiredRole) {
                     String username = jwtTokenService.extractUsernameFromToken(token);
-                    System.err.println("GATEWAY SECURITY: User '" + username + "' lacks required roles " + 
+                    System.err.println("GATEWAY SECURITY: User '" + username + "' lacks required roles " +
                             config.getRequiredRoles() + " for " + request.getPath());
                     response.setStatusCode(HttpStatus.FORBIDDEN);
                     return response.setComplete();
@@ -74,7 +74,7 @@ public class AuthFilter extends AbstractGatewayFilterFactory<AuthFilter.Config> 
             // Log successful authorization
             String username = jwtTokenService.extractUsernameFromToken(token);
             List<String> userRoles = jwtTokenService.extractCognitoGroupsFromToken(token);
-            System.out.println("GATEWAY ACCESS GRANTED: User '" + username + "' with roles " + userRoles + 
+            System.out.println("GATEWAY ACCESS GRANTED: User '" + username + "' with roles " + userRoles +
                     " accessing " + request.getPath());
 
             // Add user info to request headers for downstream services

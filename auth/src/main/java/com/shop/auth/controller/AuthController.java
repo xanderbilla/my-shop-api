@@ -206,7 +206,7 @@ public class AuthController {
         try {
             // Get current user ID from security service
             String userId = authSecurityService.getCurrentUserId();
-            
+
             // Get user info
             AuthUser user = authService.getUserInfo(userId);
 
@@ -274,8 +274,8 @@ public class AuthController {
 
             String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
 
-            authService.changePassword(cognitoUsername, 
-                    changePasswordRequest.getCurrentPassword(), 
+            authService.changePassword(cognitoUsername,
+                    changePasswordRequest.getCurrentPassword(),
                     changePasswordRequest.getNewPassword());
 
             return ResponseEntity.ok(ApiResponse.success(

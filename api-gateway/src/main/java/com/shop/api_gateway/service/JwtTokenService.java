@@ -83,11 +83,12 @@ public class JwtTokenService {
 
             // Decode and validate payload
             JsonNode payload = decodeJsonBase64(tokenParts[1]);
-            
+
             // Validate issuer
             String issuer = payload.get("iss").asText();
             if (!expectedIssuer.equals(issuer)) {
-                System.err.println("JWT Validation Failed: Invalid issuer: " + issuer + ", expected: " + expectedIssuer);
+                System.err
+                        .println("JWT Validation Failed: Invalid issuer: " + issuer + ", expected: " + expectedIssuer);
                 return false;
             }
 
@@ -215,7 +216,7 @@ public class JwtTokenService {
 
         RSAPublicKeySpec spec = new RSAPublicKeySpec(modulus, exponent);
         KeyFactory factory = KeyFactory.getInstance("RSA");
-        
+
         return factory.generatePublic(spec);
     }
 
@@ -248,13 +249,13 @@ public class JwtTokenService {
 
             List<String> groups = new ArrayList<>();
             JsonNode cognitoGroupsNode = payloadNode.get("cognito:groups");
-            
+
             if (cognitoGroupsNode != null && cognitoGroupsNode.isArray()) {
                 for (JsonNode groupNode : cognitoGroupsNode) {
                     groups.add(groupNode.asText());
                 }
             }
-            
+
             return groups;
         } catch (Exception e) {
             System.err.println("Failed to extract Cognito groups: " + e.getMessage());
@@ -279,7 +280,7 @@ public class JwtTokenService {
             } else if (payloadNode.has("sub")) {
                 return payloadNode.get("sub").asText();
             }
-            
+
             return "unknown";
         } catch (Exception e) {
             System.err.println("Failed to extract username: " + e.getMessage());
