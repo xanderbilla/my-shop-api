@@ -178,6 +178,57 @@ Resources:
         - Key: Name
           Value: !Sub "${AWS::StackName}-user-table"
 
+  # DynamoDB Table for Carousel Management
+  CarouselTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-carousel-table"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: type
+          AttributeType: S
+        - AttributeName: priority
+          AttributeType: N
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: type-index
+          KeySchema:
+            - AttributeName: type
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: priority-index
+          KeySchema:
+            - AttributeName: priority
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: !Ref ServiceName
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-carousel-table"
+
   # IAM Role for accessing Cognito and DynamoDB from the application
   CognitoAccessRole:
     Type: AWS::IAM::Role
@@ -236,6 +287,8 @@ Resources:
                 Resource:
                   - !GetAtt UserProfileTable.Arn
                   - !Sub "${UserProfileTable.Arn}/index/*"
+                  - !GetAtt CarouselTable.Arn
+                  - !Sub "${CarouselTable.Arn}/index/*"
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -298,6 +351,18 @@ Outputs:
     Export:
       Name: !Sub "${ServiceName}-${Environment}-UserProfileTableArn"
 
+  CarouselTableName:
+    Description: "DynamoDB Carousel Table Name"
+    Value: !Ref CarouselTable
+    Export:
+      Name: !Sub "${ServiceName}-${Environment}-CarouselTableName"
+
+  CarouselTableArn:
+    Description: "DynamoDB Carousel Table ARN"
+    Value: !GetAtt CarouselTable.Arn
+    Export:
+      Name: !Sub "${ServiceName}-${Environment}-CarouselTableArn"
+
   # Environment variables for the application
   EnvironmentVariables:
     Description: "Environment variables to set in your application"
@@ -307,5 +372,6 @@ Outputs:
       AWS_COGNITO_CLIENT_ID=${CognitoUserPoolClient}
       AWS_COGNITO_CLIENT_SECRET=${CognitoUserPoolClient.ClientSecret}
       AWS_DYNAMODB_USER_TABLE=${UserProfileTable}
+      AWS_DYNAMODB_CAROUSEL_TABLE=${CarouselTable}
     Export:
       Name: !Sub "${ServiceName}-${Environment}-EnvVars"
