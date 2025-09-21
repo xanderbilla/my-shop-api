@@ -7,7 +7,7 @@ import com.shop.auth.dto.SigninRequest;
 import com.shop.auth.dto.SignupRequest;
 import com.shop.auth.dto.VerifyRequest;
 import com.shop.auth.enums.UserRole;
-import com.shop.auth.enums.UserStatus;
+import com.shop.auth.enums.CognitoUserStatus;
 import com.shop.auth.exception.CognitoExceptionHandler;
 import com.shop.auth.model.AuthUser;
 import com.shop.auth.util.CognitoUtil;
@@ -224,6 +224,22 @@ public class AuthService {
             // Find the user's email (actual Cognito username) by their custom username
             String userEmail = findEmailByCustomUsername(request.getUsername());
 
+            // Check Cognito user status first
+            AdminGetUserRequest getUserRequest = AdminGetUserRequest.builder()
+                    .userPoolId(cognitoConfig.getUserPoolId())
+                    .username(userEmail)
+                    .build();
+
+            AdminGetUserResponse getUserResponse = cognitoClient.adminGetUser(getUserRequest);
+
+            // Check if user is already confirmed in Cognito
+            if (getUserResponse.userStatus() == UserStatusType.CONFIRMED) {
+                // Update our local database to match Cognito status
+                AuthUser user = getUserInfo(userEmail);
+                userProfileService.updateVerificationStatus(user.getUserId(), true);
+                throw new IllegalStateException("User is already verified");
+            }
+
             // Calculate secret hash using the email (actual Cognito username)
             String secretHash = cognitoUtil.calculateSecretHash(userEmail);
 
@@ -248,8 +264,27 @@ public class AuthService {
             // verification
             assignUserToCognitoGroups(userEmail, user.getRoles());
 
-            return createUserBasedOnExisting(user, request.getUsername());
+            // Create updated user with CONFIRMED status
+            AuthUser updatedUser = createUserBasedOnExisting(user, request.getUsername());
+            // Update the userStatus to CONFIRMED after successful verification
+            updatedUser = AuthUser.builder()
+                    .userId(updatedUser.getUserId())
+                    .username(updatedUser.getUsername())
+                    .name(updatedUser.getName())
+                    .email(updatedUser.getEmail())
+                    .enabled(true) // User is now enabled
+                    .roles(updatedUser.getRoles())
+                    .userStatus(CognitoUserStatus.CONFIRMED) // Set to CONFIRMED
+                    .build();
 
+            return updatedUser;
+
+        } catch (IllegalStateException e) {
+            // Handle our custom "already verified" exception
+            if (e.getMessage().contains("already verified")) {
+                throw new RuntimeException(e.getMessage());
+            }
+            throw e;
         } catch (CognitoIdentityProviderException e) {
             CognitoExceptionHandler.handleCognitoException(e, "Email verification");
             return null; // This will never be reached due to exception throwing
@@ -731,36 +766,36 @@ public class AuthService {
     // ===============================
 
     /**
-     * Safely gets user status with default fallback
+     * Safely gets user cognito status with default fallback
      * 
      * @param user User object that may have null status
-     * @return UserStatus, defaulting to ACTIVE if null
+     * @return CognitoUserStatus, defaulting to UNCONFIRMED if null
      */
-    private UserStatus getStatusOrDefault(AuthUser user) {
-        return user.getStatus() != null ? user.getStatus() : UserStatus.ACTIVE;
+    private CognitoUserStatus getStatusOrDefault(AuthUser user) {
+        return user.getUserStatus() != null ? user.getUserStatus() : CognitoUserStatus.UNCONFIRMED;
     }
 
     /**
      * Creates a User with default ACTIVE status
      * 
-     * @param userId     User ID
-     * @param username   Username
-     * @param name       Display name
-     * @param email      Email address
-     * @param isVerified Verification status
-     * @param roles      User roles
-     * @return User object with default ACTIVE status
+     * @param userId   User ID
+     * @param username Username
+     * @param name     Display name
+     * @param email    Email address
+     * @param enabled  Enabled status
+     * @param roles    User roles
+     * @return User object with default UNCONFIRMED status
      */
     private AuthUser createUserWithDefaultStatus(String userId, String username, String name,
-            String email, boolean isVerified, List<UserRole> roles) {
+            String email, boolean enabled, List<UserRole> roles) {
         return AuthUser.builder()
                 .userId(userId)
                 .username(username)
                 .name(name)
                 .email(email)
-                .isVerified(isVerified)
+                .enabled(enabled)
                 .roles(roles)
-                .status(UserStatus.ACTIVE)
+                .userStatus(CognitoUserStatus.UNCONFIRMED)
                 .build();
     }
 
@@ -813,9 +848,9 @@ public class AuthService {
                 .username(username != null ? username : existingUser.getUsername())
                 .name(existingUser.getName())
                 .email(existingUser.getEmail())
-                .isVerified(existingUser.isVerified())
+                .enabled(existingUser.isEnabled())
                 .roles(existingUser.getRoles())
-                .status(getStatusOrDefault(existingUser))
+                .userStatus(getStatusOrDefault(existingUser))
                 .build();
     }
 }

@@ -2,7 +2,7 @@ package com.shop.auth.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.shop.auth.enums.UserRole;
-import com.shop.auth.enums.UserStatus;
+import com.shop.auth.enums.CognitoUserStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,21 +21,22 @@ public class AuthUser {
     private String name;
     private String email;
 
-    @JsonProperty("verified")
-    private boolean isVerified;
+    @JsonProperty("enabled")
+    private boolean enabled; // Maps to Cognito enabled field
     private List<UserRole> roles;
-    private UserStatus status;
+    @JsonProperty("userStatus")
+    private CognitoUserStatus userStatus; // Maps to Cognito user status (UNCONFIRMED, CONFIRMED, etc.)
 
     // Constructor for creating user without roles (defaults to USER)
-    public AuthUser(String userId, String username, String name, String email, boolean isVerified) {
+    public AuthUser(String userId, String username, String name, String email, boolean enabled) {
         this.userId = userId;
         this.username = username;
         this.name = name;
         this.email = email;
-        this.isVerified = isVerified;
+        this.enabled = enabled;
         this.roles = new ArrayList<>();
         this.roles.add(UserRole.USER);
-        this.status = UserStatus.ACTIVE; // Default status
+        this.userStatus = CognitoUserStatus.UNCONFIRMED; // Default status
     }
 
     // Helper method to check if user has a specific role

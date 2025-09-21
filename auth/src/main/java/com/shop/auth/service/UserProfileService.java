@@ -6,7 +6,6 @@ import com.shop.auth.model.User;
 import com.shop.auth.model.AuthUser;
 import com.shop.auth.enums.Theme;
 import com.shop.auth.enums.UserRole;
-import com.shop.auth.enums.UserStatus;
 import com.shop.auth.enums.FraudRisk;
 import com.shop.auth.repository.UserProfileRepository;
 import org.springframework.stereotype.Service;
@@ -32,7 +31,7 @@ public class UserProfileService {
                 .phone(null) // Will be updated later by user
                 .gender(null) // Will be updated later by user
                 .profilePicture(null)
-                .verified(user.isVerified())
+                .enabled(user.isEnabled())
                 .addresses(new ArrayList<>()) // Empty initially
                 .preferences(createDefaultPreferences())
                 .accountStats(createDefaultAccountStats())
@@ -41,7 +40,7 @@ public class UserProfileService {
                                                                                                                    // role
                                                                                                                    // from
                                                                                                                    // Cognito
-                .accountStatus(UserStatus.valueOf(user.getStatus().name())) // ACTIVE, INACTIVE, BANNED - maps directly
+                .userStatus(user.getUserStatus()) // Direct mapping to CognitoUserStatus
                 .kycVerified(false)
                 .fraudRisk(FraudRisk.LOW)
                 .consent(createDefaultConsent())
@@ -91,10 +90,10 @@ public class UserProfileService {
         }
     }
 
-    public void updateVerificationStatus(String userId, boolean verified) {
+    public void updateVerificationStatus(String userId, boolean enabled) {
         User userProfile = getUserProfile(userId);
         if (userProfile != null) {
-            userProfile.setVerified(verified);
+            userProfile.setEnabled(enabled);
             userProfile.setUpdatedAt(Instant.now());
             userProfileRepository.update(userProfile);
         }

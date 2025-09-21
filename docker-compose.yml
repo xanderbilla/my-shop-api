@@ -63,6 +63,19 @@ services:
       - microservices-network
     restart: unless-stopped
 
+  # User Service
+  user-service:
+    image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-user:latest
+    container_name: user-service
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://service-registry:8761/eureka/
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
 networks:
   microservices-network:
     driver: bridge

@@ -10,17 +10,21 @@ spring:
           uri: lb://auth
           predicates:
             - Path=/api/v1/auth/**
-        - id: admin-service
-          uri: lb://admin
-          predicates:
-            - Path=/api/v1/admin/**
         - id: client-service
           uri: lb://client
           predicates:
             - Path=/api/v1/client/**
+        - id: user-service
+          uri: lb://user
+          predicates:
+            - Path=/api/v1/users/**
+        - id: user-admin-service
+          uri: lb://user
+          predicates:
+            - Path=/api/v1/admin/**
       globalcors:
         cors-configurations:
-          '[/**]':
+          "[/**]":
             allowedOrigins: "*"
             allowedMethods:
               - GET
@@ -60,5 +64,5 @@ eureka:
 
 logging:
   level:
-    '[org.springframework.cloud.gateway]': DEBUG
-    '[org.springframework.cloud.loadbalancer]': DEBUG
+    "[org.springframework.cloud.gateway]": DEBUG
+    "[org.springframework.cloud.loadbalancer]": DEBUG

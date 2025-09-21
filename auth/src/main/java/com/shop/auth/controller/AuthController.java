@@ -56,8 +56,16 @@ public class AuthController {
 
     @PostMapping("/verify")
     public ResponseEntity<ApiResponse<AuthUser>> verify(@Valid @RequestBody VerifyRequest request) {
-        AuthUser user = authService.verify(request);
-        return ResponseUtil.ok(AuthConstants.SuccessMessages.EMAIL_VERIFIED, user);
+        try {
+            AuthUser user = authService.verify(request);
+            return ResponseUtil.ok(AuthConstants.SuccessMessages.EMAIL_VERIFIED, user);
+        } catch (RuntimeException e) {
+            if (e.getMessage().contains("already verified")) {
+                return ResponseEntity.status(400).body(
+                        ApiResponse.error(e.getMessage(), 400));
+            }
+            throw e; // Re-throw other runtime exceptions
+        }
     }
 
     @GetMapping("/me")
@@ -211,7 +219,7 @@ public class AuthController {
             AuthUser user = authService.getUserInfo(userId);
 
             StatusResponse statusResponse = new StatusResponse(
-                    user.getStatus() != null ? user.getStatus().toString() : "ACTIVE");
+                    user.getUserStatus() != null ? user.getUserStatus().toString() : "UNCONFIRMED");
 
             return ResponseEntity.ok(ApiResponse.success(
                     "User status retrieved successfully", statusResponse));

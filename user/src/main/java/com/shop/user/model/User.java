@@ -1,9 +1,9 @@
-package com.shop.auth.model;
+package com.shop.user.model;
 
-import com.shop.auth.enums.UserRole;
-import com.shop.auth.enums.FraudRisk;
-import com.shop.auth.enums.CognitoUserStatus;
-import com.shop.auth.enums.Theme;
+import com.shop.user.enums.UserRole;
+import com.shop.user.enums.FraudRisk;
+import com.shop.user.enums.CognitoUserStatus;
+import com.shop.user.enums.Theme;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

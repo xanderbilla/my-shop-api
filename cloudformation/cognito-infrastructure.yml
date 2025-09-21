@@ -127,6 +127,14 @@ Resources:
       UserPoolId: !Ref CognitoUserPool
       Precedence: 10
 
+  CognitoSupportGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: SUPPORT
+      Description: Support team group with moderate permissions
+      UserPoolId: !Ref CognitoUserPool
+      Precedence: 50
+
   # DynamoDB Table for User Profiles
   UserProfileTable:
     Type: AWS::DynamoDB::Table
