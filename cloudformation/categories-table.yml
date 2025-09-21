@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Categories DynamoDB Table for My Shop API"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+
+  ServiceName:
+    Type: String
+    Default: my-shop
+    Description: Name of the service
+
+Resources:
+  # DynamoDB Table for Categories Management
+  CategoriesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${ServiceName}-categories-table"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: parentId
+          AttributeType: S
+        - AttributeName: categoryName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: parentId-index
+          KeySchema:
+            - AttributeName: parentId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: categoryName-index
+          KeySchema:
+            - AttributeName: categoryName
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: !Ref ServiceName
+        - Key: Name
+          Value: !Sub "${ServiceName}-categories-table"
+
+Outputs:
+  CategoriesTableName:
+    Description: "DynamoDB Categories Table Name"
+    Value: !Ref CategoriesTable
+    Export:
+      Name: !Sub "${ServiceName}-${Environment}-CategoriesTableName"
+
+  CategoriesTableArn:
+    Description: "DynamoDB Categories Table ARN"
+    Value: !GetAtt CategoriesTable.Arn
+    Export:
+      Name: !Sub "${ServiceName}-${Environment}-CategoriesTableArn"

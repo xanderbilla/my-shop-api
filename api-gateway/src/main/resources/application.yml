@@ -26,6 +26,10 @@ spring:
           uri: lb://carousel-service
           predicates:
             - Path=/api/v1/admin/carousels/**
+        - id: categories-service
+          uri: lb://categories-service
+          predicates:
+            - Path=/api/v1/admin/categories/**
       globalcors:
         cors-configurations:
           "[/**]":

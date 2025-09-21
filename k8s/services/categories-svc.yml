@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: categories-service
+  namespace: my-shop
+  labels:
+    app: categories-service
+    service: categories
+spec:
+  selector:
+    app: categories-service
+  ports:
+    - port: 8086
+      targetPort: 8086
+      protocol: TCP
+      name: http
+  type: ClusterIP
