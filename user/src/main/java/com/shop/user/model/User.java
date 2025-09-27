@@ -45,7 +45,6 @@ public class User {
     private Instant lastLogin; // Last successful login timestamp
     private String createdBy; // admin/system
     private String updatedBy; // admin/system
-    private Boolean isActive; // quick toggle
 
     @DynamoDbPartitionKey
     public String getUserId() {
@@ -147,26 +146,12 @@ public class User {
         }
     }
 
-    // Convenience methods for role handling
-
-    /**
-     * Legacy getter for backward compatibility
-     */
-    public UserRole getRole() {
-        return (roles != null && !roles.isEmpty()) ? roles.get(0) : null;
-    }
+    // Convenience method for role handling
 
     /**
      * Check if user has a specific role
      */
     public boolean hasRole(UserRole role) {
         return roles != null && roles.contains(role);
-    }
-
-    /**
-     * Check if user has admin role
-     */
-    public boolean isAdmin() {
-        return hasRole(UserRole.ADMIN);
     }
 }

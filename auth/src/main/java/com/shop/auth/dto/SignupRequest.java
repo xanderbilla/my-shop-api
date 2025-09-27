@@ -45,16 +45,4 @@ public class SignupRequest {
         return roles;
     }
 
-    // For backward compatibility, support single role
-    @Deprecated
-    public UserRole getRole() {
-        List<UserRole> rolesList = getRoles();
-        return rolesList.isEmpty() ? UserRole.USER : rolesList.get(0);
-    }
-
-    // For backward compatibility, support setting single role
-    @Deprecated
-    public void setRole(UserRole role) {
-        this.roles = role != null ? Arrays.asList(role) : Arrays.asList(UserRole.USER);
-    }
 }

@@ -1,6 +1,8 @@
 package com.shop.user.dto;
 
 import com.shop.user.enums.UserRole;
+import java.util.List;
+import java.util.Arrays;
 
 /**
  * Request DTO for user creation
@@ -13,15 +15,15 @@ public class UserCreationRequest {
 
     private String email;
     private String name;
-    private UserRole role;
+    private List<UserRole> roles;
 
     public UserCreationRequest() {
     }
 
-    public UserCreationRequest(String email, String name, UserRole role) {
+    public UserCreationRequest(String email, String name, List<UserRole> roles) {
         this.email = email;
         this.name = name;
-        this.role = role;
+        this.roles = roles;
     }
 
     public String getEmail() {
@@ -40,12 +42,15 @@ public class UserCreationRequest {
         this.name = name;
     }
 
-    public UserRole getRole() {
-        return role;
+    public List<UserRole> getRoles() {
+        if (roles == null || roles.isEmpty()) {
+            return Arrays.asList(UserRole.USER);
+        }
+        return roles;
     }
 
-    public void setRole(UserRole role) {
-        this.role = role;
+    public void setRoles(List<UserRole> roles) {
+        this.roles = roles;
     }
 
     @Override
@@ -53,7 +58,7 @@ public class UserCreationRequest {
         return "UserCreationRequest{" +
                 "email='" + email + '\'' +
                 ", name='" + name + '\'' +
-                ", role=" + role +
+                ", roles=" + roles +
                 '}';
     }
 }

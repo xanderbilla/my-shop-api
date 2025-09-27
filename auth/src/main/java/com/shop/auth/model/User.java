@@ -33,7 +33,7 @@ public class User {
     private List<Address> addresses;
     private Preferences preferences;
     private AccountStats accountStats;
-    private UserRole role; // USER | ADMIN | SUPPORT
+    private List<UserRole> roles; // USER | ADMIN | SUPPORT - supports multiple roles
     private CognitoUserStatus userStatus; // UNCONFIRMED | CONFIRMED | ARCHIVED | COMPROMISED | UNKNOWN | RESET_REQUIRED
                                           // | FORCE_CHANGE_PASSWORD
     private Boolean kycVerified; // identity verification
@@ -45,7 +45,6 @@ public class User {
     private Instant lastLogin; // Last successful login timestamp
     private String createdBy; // admin/system
     private String updatedBy; // admin/system
-    private Boolean isActive; // quick toggle
 
     @DynamoDbPartitionKey
     public String getUserId() {
@@ -145,5 +144,14 @@ public class User {
                     .restoreAt(null)
                     .build();
         }
+    }
+
+    // Convenience method for role handling
+
+    /**
+     * Check if user has a specific role
+     */
+    public boolean hasRole(UserRole role) {
+        return roles != null && roles.contains(role);
     }
 }

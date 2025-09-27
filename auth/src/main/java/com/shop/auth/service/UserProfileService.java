@@ -5,7 +5,7 @@ import com.shop.auth.exception.UserNotFoundException;
 import com.shop.auth.model.User;
 import com.shop.auth.model.AuthUser;
 import com.shop.auth.enums.Theme;
-import com.shop.auth.enums.UserRole;
+
 import com.shop.auth.enums.FraudRisk;
 import com.shop.auth.enums.CognitoUserStatus;
 import com.shop.auth.repository.UserProfileRepository;
@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 @Service
 public class UserProfileService {
@@ -36,11 +38,10 @@ public class UserProfileService {
                 .addresses(new ArrayList<>()) // Empty initially
                 .preferences(createDefaultPreferences())
                 .accountStats(createDefaultAccountStats())
-                .role(user.getRoles().isEmpty() ? UserRole.USER : UserRole.valueOf(user.getRoles().get(0).name())) // Use
-                                                                                                                   // actual
-                                                                                                                   // role
-                                                                                                                   // from
-                                                                                                                   // Cognito
+                .roles(user.getRoles().isEmpty() ? Arrays.asList(com.shop.auth.enums.UserRole.USER)
+                        : user.getRoles().stream()
+                                .map(role -> com.shop.auth.enums.UserRole.valueOf(role.name()))
+                                .collect(Collectors.toList())) // Convert AuthUser roles to User roles
                 .userStatus(user.getUserStatus()) // Direct mapping to CognitoUserStatus
                 .kycVerified(false)
                 .fraudRisk(FraudRisk.LOW)
@@ -51,7 +52,6 @@ public class UserProfileService {
                 .lastLogin(null) // Will be set on first login
                 .createdBy("SYSTEM")
                 .updatedBy("SYSTEM")
-                .isActive(true)
                 .build();
 
         userProfileRepository.save(userProfile);

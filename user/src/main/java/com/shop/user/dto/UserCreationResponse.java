@@ -1,6 +1,7 @@
 package com.shop.user.dto;
 
 import com.shop.user.enums.UserRole;
+import java.util.List;
 
 /**
  * Response DTO for user creation
@@ -15,19 +16,19 @@ public class UserCreationResponse {
     private String cognitoUsername;
     private String email;
     private String temporaryPassword;
-    private UserRole role;
+    private List<UserRole> roles;
     private String status;
 
     public UserCreationResponse() {
     }
 
     public UserCreationResponse(String userId, String cognitoUsername, String email,
-            String temporaryPassword, UserRole role, String status) {
+            String temporaryPassword, List<UserRole> roles, String status) {
         this.userId = userId;
         this.cognitoUsername = cognitoUsername;
         this.email = email;
         this.temporaryPassword = temporaryPassword;
-        this.role = role;
+        this.roles = roles;
         this.status = status;
     }
 
@@ -63,12 +64,12 @@ public class UserCreationResponse {
         this.temporaryPassword = temporaryPassword;
     }
 
-    public UserRole getRole() {
-        return role;
+    public List<UserRole> getRoles() {
+        return roles;
     }
 
-    public void setRole(UserRole role) {
-        this.role = role;
+    public void setRoles(List<UserRole> roles) {
+        this.roles = roles;
     }
 
     public String getStatus() {
@@ -86,7 +87,7 @@ public class UserCreationResponse {
                 ", cognitoUsername='" + cognitoUsername + '\'' +
                 ", email='" + email + '\'' +
                 ", temporaryPassword='" + temporaryPassword + '\'' +
-                ", role=" + role +
+                ", roles=" + roles +
                 ", status='" + status + '\'' +
                 '}';
     }

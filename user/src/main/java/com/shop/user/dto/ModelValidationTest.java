@@ -1,6 +1,7 @@
 package com.shop.user.dto;
 
 import com.shop.user.enums.UserRole;
+import java.util.Arrays;
 
 /**
  * Test DTO to validate model usage instead of Map
@@ -16,7 +17,7 @@ public class ModelValidationTest {
         UserCreationRequest request = new UserCreationRequest();
         request.setEmail("test@example.com");
         request.setName("Test User");
-        request.setRole(UserRole.USER);
+        request.setRoles(Arrays.asList(UserRole.USER));
 
         System.out.println("UserCreationRequest: " + request);
 
@@ -26,7 +27,7 @@ public class ModelValidationTest {
         response.setCognitoUsername("test-username");
         response.setEmail("test@example.com");
         response.setTemporaryPassword("temp-pass");
-        response.setRole(UserRole.USER);
+        response.setRoles(Arrays.asList(UserRole.USER));
         response.setStatus("created");
 
         System.out.println("UserCreationResponse: " + response);

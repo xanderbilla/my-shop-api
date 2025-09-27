@@ -6,16 +6,18 @@ import com.shop.user.dto.UserCreationResponse;
 import com.shop.user.dto.UpdateRoleRequest;
 import com.shop.user.dto.UpdateStatusRequest;
 import com.shop.user.dto.UpdateRiskRequest;
+import com.shop.user.dto.UserFilterRequest;
+import com.shop.user.dto.PaginatedResponse;
 import com.shop.user.model.User;
 import com.shop.user.enums.UserRole;
 import com.shop.user.service.UserService;
+import java.util.List;
 import com.shop.user.service.AdminSecurityService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -56,21 +58,48 @@ public class AdminUserController {
     }
 
     /**
-     * Get all users from DynamoDB
+     * Get all users with filtering, sorting, and pagination support
      * 
      * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
      * 
-     * @param limit Optional limit for number of users to retrieve
-     * @return ResponseEntity with ApiResponse containing list of users
+     * Query parameters:
+     * - query: Filter users by full/partial username, custName, email, phone match
+     * (default: null)
+     * - userStatus: User status filter - CONFIRMED (default), UNCONFIRMED,
+     * ARCHIVED, COMPROMISED, UNKNOWN, RESET_REQUIRED, FORCE_CHANGE_PASSWORD
+     * - role: Filter by assigned role - USER (default), ADMIN, SUPPORT
+     * - page: Page number (default: 1)
+     * - limit: Records per page (default: 10)
+     * - sortBy: Field to sort by - createdAt (default), updatedAt, lastLogin
+     * - sortOrder: Sort order - asc (default) or desc
+     * 
+     * @param query      Search query for username, custName, email, phone
+     * @param userStatus User status filter
+     * @param role       Role filter
+     * @param page       Page number (default: 1)
+     * @param limit      Records per page (default: 10)
+     * @param sortBy     Field to sort by (default: createdAt)
+     * @param sortOrder  Sort order - 'asc' or 'desc' (default: asc)
+     * @return Paginated response with users and pagination metadata
      */
     @GetMapping("/users")
     @PreAuthorize("@adminSecurityService.isAdmin()")
-    public ResponseEntity<ApiResponse<List<User>>> getAllUsers(
-            @RequestParam(required = false) Integer limit) {
+    public ResponseEntity<ApiResponse<PaginatedResponse<User>>> getAllUsers(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false, defaultValue = "CONFIRMED") com.shop.user.enums.CognitoUserStatus userStatus,
+            @RequestParam(required = false, defaultValue = "USER") UserRole role,
+            @RequestParam(required = false, defaultValue = "1") Integer page,
+            @RequestParam(required = false, defaultValue = "10") Integer limit,
+            @RequestParam(required = false, defaultValue = "createdAt") String sortBy,
+            @RequestParam(required = false, defaultValue = "asc") String sortOrder) {
         try {
-            List<User> users = userService.getAllUsers();
+            // Create filter request
+            UserFilterRequest filterRequest = new UserFilterRequest(query, userStatus, role, page, limit, sortBy,
+                    sortOrder);
+
+            PaginatedResponse<User> paginatedUsers = userService.getFilteredUsers(filterRequest);
             return ResponseEntity.ok(
-                    ApiResponse.success("Users retrieved successfully", users));
+                    ApiResponse.success("Users retrieved successfully", paginatedUsers));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(
                     ApiResponse.error("Failed to retrieve users: " + e.getMessage(), 500));
@@ -117,17 +146,17 @@ public class AdminUserController {
             @RequestBody UserCreationRequest userCreationRequest) {
         try {
             String email = userCreationRequest.getEmail();
-            UserRole role = userCreationRequest.getRole();
+            List<UserRole> roles = userCreationRequest.getRoles();
             String name = userCreationRequest.getName();
 
-            if (email == null || role == null || name == null) {
+            if (email == null || roles == null || roles.isEmpty() || name == null) {
                 return ResponseEntity.status(400).body(
-                        ApiResponse.error("Missing required fields: email, role, name", 400));
+                        ApiResponse.error("Missing required fields: email, roles, name", 400));
             }
 
             String adminId = adminSecurityService.getCurrentAdminId();
 
-            UserCreationResponse result = userService.createUser(email, role, name, adminId);
+            UserCreationResponse result = userService.createUser(email, roles, name, adminId);
             return ResponseEntity.ok(
                     ApiResponse.success("User created successfully", result));
         } catch (IllegalArgumentException e) {

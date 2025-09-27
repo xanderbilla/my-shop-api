@@ -1,11 +1,11 @@
 package com.shop.user.service;
 
-import com.shop.user.dto.CognitoUserCreationResponse;
-import com.shop.user.dto.UserCreationResponse;
 import com.shop.user.model.User;
-import com.shop.user.enums.UserRole;
-import com.shop.user.enums.CognitoUserStatus;
-import com.shop.user.enums.FraudRisk;
+import com.shop.user.dto.UserCreationResponse;
+import com.shop.user.dto.CognitoUserCreationResponse;
+import com.shop.user.dto.UserFilterRequest;
+import com.shop.user.dto.PaginatedResponse;
+import com.shop.user.enums.*;
 import com.shop.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
@@ -53,6 +53,16 @@ public class UserService {
     }
 
     /**
+     * Get filtered, sorted, and paginated users
+     * 
+     * @param filterRequest Filter and pagination parameters
+     * @return PaginatedResponse containing filtered users
+     */
+    public PaginatedResponse<User> getFilteredUsers(UserFilterRequest filterRequest) {
+        return userRepository.getFilteredUsers(filterRequest);
+    }
+
+    /**
      * Get a user by ID
      * 
      * @param userId User ID to retrieve
@@ -88,13 +98,14 @@ public class UserService {
      * Create a new user in both DynamoDB and Cognito
      * 
      * @param email   User email
-     * @param role    User role (determines Cognito group)
+     * @param roles   User roles (determines Cognito group - uses first role for
+     *                Cognito)
      * @param name    User name
      * @param adminId Admin ID performing the action
      * @return UserCreationResponse containing creation result with Cognito
      *         credentials
      */
-    public UserCreationResponse createUser(String email, UserRole role, String name, String adminId) {
+    public UserCreationResponse createUser(String email, List<UserRole> roles, String name, String adminId) {
         // Validate input
         if (email == null || email.trim().isEmpty()) {
             throw new RuntimeException("Email is required");
@@ -102,10 +113,14 @@ public class UserService {
         if (name == null || name.trim().isEmpty()) {
             throw new RuntimeException("Name is required");
         }
+        if (roles == null || roles.isEmpty()) {
+            throw new RuntimeException("At least one role is required");
+        }
 
         try {
-            // Step 1: Create user in Cognito first
-            CognitoUserCreationResponse cognitoResult = cognitoService.createCognitoUser(email, name, role);
+            // Step 1: Create user in Cognito first (use first role for Cognito group)
+            UserRole primaryRole = roles.get(0);
+            CognitoUserCreationResponse cognitoResult = cognitoService.createCognitoUser(email, name, primaryRole);
             String cognitoUsername = cognitoResult.getUsername();
             String temporaryPassword = cognitoResult.getTemporaryPassword();
 
@@ -115,12 +130,11 @@ public class UserService {
                     .username(cognitoUsername) // Use Cognito username
                     .custName(name)
                     .email(email)
-                    .roles(List.of(role)) // Convert single role to list
+                    .roles(roles) // Use provided roles list
                     .userStatus(CognitoUserStatus.CONFIRMED) // Default for admin-created users
                     .enabled(true) // Admin-created users are enabled by default
                     .kycVerified(false)
                     .fraudRisk(FraudRisk.LOW)
-                    .isActive(true)
                     .createdAt(Instant.now())
                     .updatedAt(Instant.now())
                     .createdBy(adminId)
@@ -138,7 +152,7 @@ public class UserService {
                     cognitoUsername,
                     newUser.getEmail(),
                     temporaryPassword,
-                    role,
+                    roles,
                     "created");
 
         } catch (Exception e) {
