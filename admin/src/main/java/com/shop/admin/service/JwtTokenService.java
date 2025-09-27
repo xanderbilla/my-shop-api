@@ -28,7 +28,7 @@ public class JwtTokenService {
     @Value("${aws.cognito.region}")
     private String cognitoRegion;
 
-    @Value("${aws.cognito.userPoolId}")
+    @Value("${aws.cognito.user-pool-id}")
     private String userPoolId;
 
     private String expectedIssuer;

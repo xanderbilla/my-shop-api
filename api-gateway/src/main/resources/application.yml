@@ -18,10 +18,10 @@ spring:
           uri: lb://user
           predicates:
             - Path=/api/v1/users/**
-        - id: user-admin-service
-          uri: lb://user
+        - id: carousel-health
+          uri: lb://carousel-service
           predicates:
-            - Path=/api/v1/admin/**
+            - Path=/api/v1/carousel/health
         - id: carousel-service
           uri: lb://carousel-service
           predicates:
@@ -30,6 +30,10 @@ spring:
           uri: lb://categories-service
           predicates:
             - Path=/api/v1/admin/categories/**
+        - id: user-admin-service
+          uri: lb://user
+          predicates:
+            - Path=/api/v1/admin/**
       globalcors:
         cors-configurations:
           "[/**]":
