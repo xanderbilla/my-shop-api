@@ -218,7 +218,7 @@ public class JwtTokenService {
     /**
      * Check if token is blacklisted
      */
-    private boolean isTokenBlacklisted(String token) {
+    public boolean isTokenBlacklisted(String token) {
         return blacklistedTokens.contains(token);
     }
 

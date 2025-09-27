@@ -102,16 +102,16 @@ public class JwtTokenService {
             String[] chunks = token.split("\\.");
             String payload = new String(Base64.getUrlDecoder().decode(chunks[1]));
             JsonNode payloadNode = objectMapper.readTree(payload);
-            
+
             JsonNode groupsNode = payloadNode.get("cognito:groups");
             List<String> groups = new ArrayList<>();
-            
+
             if (groupsNode != null && groupsNode.isArray()) {
                 for (JsonNode groupNode : groupsNode) {
                     groups.add(groupNode.asText());
                 }
             }
-            
+
             return groups;
         } catch (Exception e) {
             System.err.println("Failed to extract groups from token: " + e.getMessage());
@@ -134,7 +134,8 @@ public class JwtTokenService {
         }
 
         try {
-            String jwksUrl = "https://cognito-idp." + cognitoRegion + ".amazonaws.com/" + userPoolId + "/.well-known/jwks.json";
+            String jwksUrl = "https://cognito-idp." + cognitoRegion + ".amazonaws.com/" + userPoolId
+                    + "/.well-known/jwks.json";
             String response = webClient.get()
                     .uri(jwksUrl)
                     .retrieve()

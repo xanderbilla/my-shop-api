@@ -109,38 +109,6 @@ public class AuthController {
         }
     }
 
-    @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<String>> logout(HttpServletRequest request, HttpServletResponse response) {
-        try {
-            // Get token from cookie for Cognito logout
-            String token = cookieUtil.getAccessTokenFromCookies(request).orElse(null);
-
-            if (token != null) {
-                // Logout from Cognito
-                authService.logout(token);
-
-                // Blacklist the token
-                jwtTokenService.blacklistToken(token);
-            }
-
-            // Clear authentication cookies
-            cookieUtil.clearAuthCookies(response);
-
-            ApiResponse<String> apiResponse = ApiResponse.success(
-                    "User logged out successfully",
-                    "LOGGED_OUT");
-            return ResponseEntity.ok(apiResponse);
-        } catch (Exception e) {
-            // Even if logout fails, clear cookies
-            cookieUtil.clearAuthCookies(response);
-
-            ApiResponse<String> apiResponse = ApiResponse.success(
-                    "Logged out successfully",
-                    "LOGGED_OUT");
-            return ResponseEntity.ok(apiResponse);
-        }
-    }
-
     @PostMapping("/refresh-token")
     public ResponseEntity<ApiResponse<String>> refreshToken(HttpServletRequest request, HttpServletResponse response) {
         try {
@@ -229,7 +197,7 @@ public class AuthController {
         }
     }
 
-    @GetMapping("/roles")
+    @GetMapping("/role")
     @PreAuthorize("@authSecurityService.isAuthenticated()")
     public ResponseEntity<ApiResponse<GetRoleResponse>> getUserRoles(HttpServletRequest request) {
         try {
@@ -294,6 +262,39 @@ public class AuthController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Failed to change password: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/logout")
+    @PreAuthorize("@authSecurityService.isAuthenticated()")
+    public ResponseEntity<ApiResponse<String>> logout(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            // Get access token from cookie - @PreAuthorize ensures user is authenticated
+            String token = cookieUtil.getAccessTokenFromCookies(request)
+                    .orElseThrow(() -> new RuntimeException("Access token not found"));
+
+            // Logout from Cognito (invalidate all tokens globally)
+            authService.logout(token);
+
+            // Blacklist the token locally
+            jwtTokenService.blacklistToken(token);
+
+            // Clear authentication cookies
+            cookieUtil.clearAuthCookies(response);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    "User logged out successfully", "LOGGED_OUT"));
+
+        } catch (Exception e) {
+            // Clear cookies even if logout fails
+            try {
+                cookieUtil.clearAuthCookies(response);
+            } catch (Exception cookieException) {
+                // Ignore cookie clearing errors
+            }
+
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Logout failed: " + e.getMessage()));
         }
     }
 }

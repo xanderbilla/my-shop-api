@@ -7,6 +7,7 @@ import com.shop.auth.model.AuthUser;
 import com.shop.auth.enums.Theme;
 import com.shop.auth.enums.UserRole;
 import com.shop.auth.enums.FraudRisk;
+import com.shop.auth.enums.CognitoUserStatus;
 import com.shop.auth.repository.UserProfileRepository;
 import org.springframework.stereotype.Service;
 
@@ -94,6 +95,8 @@ public class UserProfileService {
         User userProfile = getUserProfile(userId);
         if (userProfile != null) {
             userProfile.setEnabled(enabled);
+            // Update user status based on verification status
+            userProfile.setUserStatus(enabled ? CognitoUserStatus.CONFIRMED : CognitoUserStatus.UNCONFIRMED);
             userProfile.setUpdatedAt(Instant.now());
             userProfileRepository.update(userProfile);
         }

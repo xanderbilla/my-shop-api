@@ -109,7 +109,7 @@ public class AdminUserController {
      * @param userCreationRequest UserCreationRequest containing user creation data
      * @return ResponseEntity with ApiResponse containing creation result
      */
-    @PostMapping("/users/add")
+    @PostMapping("/users")
     @PreAuthorize("@adminSecurityService.isAdmin()")
     public ResponseEntity<ApiResponse<UserCreationResponse>> createUser(
             @RequestBody UserCreationRequest userCreationRequest) {

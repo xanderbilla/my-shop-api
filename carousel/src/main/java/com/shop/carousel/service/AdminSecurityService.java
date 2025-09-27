@@ -72,7 +72,8 @@ public class AdminSecurityService {
                 try {
                     String username = jwtTokenService.extractUsernameFromToken(accessToken);
                     System.err.println(
-                            "CAROUSEL SECURITY ALERT: Access denied - User '" + username + "' has no Cognito groups assigned");
+                            "CAROUSEL SECURITY ALERT: Access denied - User '" + username
+                                    + "' has no Cognito groups assigned");
                 } catch (Exception e) {
                     System.err.println("CAROUSEL SECURITY ALERT: Access denied - No Cognito groups found in token");
                 }

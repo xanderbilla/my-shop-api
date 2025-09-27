@@ -387,19 +387,23 @@ public class AuthService {
         }
     }
 
+    /**
+     * Logout user by invalidating all tokens globally
+     */
     public void logout(String accessToken) {
         try {
-            // Global sign out the user from all devices
-            GlobalSignOutRequest signOutRequest = GlobalSignOutRequest.builder()
+            // Create the GlobalSignOutRequest with the user's access token
+            GlobalSignOutRequest globalSignOutRequest = GlobalSignOutRequest.builder()
                     .accessToken(accessToken)
                     .build();
 
-            cognitoClient.globalSignOut(signOutRequest);
+            // Send the request to invalidate the user's tokens
+            cognitoClient.globalSignOut(globalSignOutRequest);
+            System.out.println("Global sign-out was successful.");
 
         } catch (CognitoIdentityProviderException e) {
+            System.err.println("Error during global sign-out: " + e.awsErrorDetails().errorMessage());
             throw new RuntimeException("Logout failed: " + e.awsErrorDetails().errorMessage());
-        } catch (Exception e) {
-            throw new RuntimeException("Logout failed: " + e.getMessage());
         }
     }
 
@@ -795,7 +799,7 @@ public class AuthService {
                 .email(email)
                 .enabled(enabled)
                 .roles(roles)
-                .userStatus(CognitoUserStatus.UNCONFIRMED)
+                .userStatus(enabled ? CognitoUserStatus.CONFIRMED : CognitoUserStatus.UNCONFIRMED)
                 .build();
     }
 
