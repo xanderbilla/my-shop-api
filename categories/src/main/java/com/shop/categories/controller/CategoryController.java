@@ -1,5 +1,6 @@
 package com.shop.categories.controller;
 
+import com.shop.categories.dto.ApiResponse;
 import com.shop.categories.dto.CategoryRequestDto;
 import com.shop.categories.model.AdminCategory;
 import com.shop.categories.model.DeleteStatus;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,24 +30,12 @@ public class CategoryController {
         private final CategoryService categoryService;
 
         /**
-         * Health check endpoint
-         */
-        @GetMapping("/health")
-        public ResponseEntity<Map<String, Object>> health() {
-                return ResponseEntity.ok(Map.of(
-                                "success", true,
-                                "message", "Categories service is running",
-                                "timestamp", System.currentTimeMillis(),
-                                "service", "categories"));
-        }
-
-        /**
          * GET /admin/categories - List all categories
          * GET /admin/categories?isActive=true - Filter by active status
          * GET /admin/categories?includeDeleted=true - Include deleted categories
          */
         @GetMapping
-        public ResponseEntity<Map<String, Object>> getAllCategories(
+        public ResponseEntity<ApiResponse<List<AdminCategory>>> getAllCategories(
                         @RequestParam(required = false) Boolean isActive,
                         @RequestParam(defaultValue = "false") Boolean includeDeleted) {
 
@@ -56,16 +44,12 @@ public class CategoryController {
                 try {
                         List<AdminCategory> categories = categoryService.getAllCategories(isActive, includeDeleted);
 
-                        return ResponseEntity.ok(Map.of(
-                                        "success", true,
-                                        "data", categories,
-                                        "count", categories.size()));
+                        return ResponseEntity.ok(
+                                        ApiResponse.success("Categories retrieved successfully", categories));
                 } catch (Exception e) {
                         log.error("Error fetching categories", e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Failed to fetch categories: " + e.getMessage()));
+                                        .body(ApiResponse.error("Failed to fetch categories: " + e.getMessage(), 500));
                 }
         }
 
@@ -73,7 +57,7 @@ public class CategoryController {
          * GET /admin/categories/top-level - Get top-level categories (no parent)
          */
         @GetMapping("/top-level")
-        public ResponseEntity<Map<String, Object>> getTopLevelCategories(
+        public ResponseEntity<ApiResponse<List<AdminCategory>>> getTopLevelCategories(
                         @RequestParam(required = false) Boolean isActive) {
 
                 log.info("GET /admin/categories/top-level - isActive: {}", isActive);
@@ -81,17 +65,14 @@ public class CategoryController {
                 try {
                         List<AdminCategory> categories = categoryService.getTopLevelCategories(isActive);
 
-                        return ResponseEntity.ok(Map.of(
-                                        "success", true,
-                                        "data", categories,
-                                        "count", categories.size()));
+                        return ResponseEntity.ok(
+                                        ApiResponse.success("Top-level categories retrieved successfully", categories));
                 } catch (Exception e) {
                         log.error("Error fetching top-level categories", e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message",
-                                                        "Failed to fetch top-level categories: " + e.getMessage()));
+                                        .body(ApiResponse.error(
+                                                        "Failed to fetch top-level categories: " + e.getMessage(),
+                                                        500));
                 }
         }
 
@@ -99,28 +80,23 @@ public class CategoryController {
          * GET /admin/categories/:id - Get details of one category
          */
         @GetMapping("/{id}")
-        public ResponseEntity<Map<String, Object>> getCategoryById(@PathVariable String id) {
+        public ResponseEntity<ApiResponse<AdminCategory>> getCategoryById(@PathVariable String id) {
                 log.info("GET /admin/categories/{}", id);
 
                 try {
                         Optional<AdminCategory> category = categoryService.getCategoryById(id);
 
                         if (category.isPresent()) {
-                                return ResponseEntity.ok(Map.of(
-                                                "success", true,
-                                                "data", category.get()));
+                                return ResponseEntity.ok(
+                                                ApiResponse.success("Category retrieved successfully", category.get()));
                         } else {
                                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                                                .body(Map.of(
-                                                                "success", false,
-                                                                "message", "Category not found with ID: " + id));
+                                                .body(ApiResponse.error("Category not found with ID: " + id, 404));
                         }
                 } catch (Exception e) {
                         log.error("Error fetching category: {}", id, e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Failed to fetch category: " + e.getMessage()));
+                                        .body(ApiResponse.error("Failed to fetch category: " + e.getMessage(), 500));
                 }
         }
 
@@ -128,7 +104,7 @@ public class CategoryController {
          * GET /admin/categories/:id/subcategories - Get child categories
          */
         @GetMapping("/{id}/subcategories")
-        public ResponseEntity<Map<String, Object>> getSubcategories(
+        public ResponseEntity<ApiResponse<List<AdminCategory>>> getSubcategories(
                         @PathVariable String id,
                         @RequestParam(required = false) Boolean isActive) {
 
@@ -137,17 +113,13 @@ public class CategoryController {
                 try {
                         List<AdminCategory> subcategories = categoryService.getSubcategories(id, isActive);
 
-                        return ResponseEntity.ok(Map.of(
-                                        "success", true,
-                                        "data", subcategories,
-                                        "count", subcategories.size(),
-                                        "parentId", id));
+                        return ResponseEntity.ok(
+                                        ApiResponse.success("Subcategories retrieved successfully", subcategories));
                 } catch (Exception e) {
                         log.error("Error fetching subcategories for: {}", id, e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Failed to fetch subcategories: " + e.getMessage()));
+                                        .body(ApiResponse.error("Failed to fetch subcategories: " + e.getMessage(),
+                                                        500));
                 }
         }
 
@@ -155,7 +127,7 @@ public class CategoryController {
          * POST /admin/categories - Create a new category
          */
         @PostMapping
-        public ResponseEntity<Map<String, Object>> createCategory(
+        public ResponseEntity<ApiResponse<AdminCategory>> createCategory(
                         @Valid @RequestBody CategoryRequestDto categoryRequest,
                         BindingResult bindingResult) {
 
@@ -168,9 +140,7 @@ public class CategoryController {
                                         .collect(Collectors.joining(", "));
 
                         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Validation failed: " + errors));
+                                        .body(ApiResponse.error("Validation failed: " + errors, 400));
                 }
 
                 try {
@@ -193,16 +163,11 @@ public class CategoryController {
                         AdminCategory createdCategory = categoryService.createCategory(category);
 
                         return ResponseEntity.status(HttpStatus.CREATED)
-                                        .body(Map.of(
-                                                        "success", true,
-                                                        "data", createdCategory,
-                                                        "message", "Category created successfully"));
+                                        .body(ApiResponse.success("Category created successfully", createdCategory));
                 } catch (Exception e) {
                         log.error("Error creating category", e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Failed to create category: " + e.getMessage()));
+                                        .body(ApiResponse.error("Failed to create category: " + e.getMessage(), 500));
                 }
         }
 
@@ -210,7 +175,7 @@ public class CategoryController {
          * POST /admin/categories/:id/subcategories - Create child category
          */
         @PostMapping("/{id}/subcategories")
-        public ResponseEntity<Map<String, Object>> createSubcategory(
+        public ResponseEntity<ApiResponse<AdminCategory>> createSubcategory(
                         @PathVariable String id,
                         @Valid @RequestBody CategoryRequestDto subcategoryRequest,
                         BindingResult bindingResult) {
@@ -225,9 +190,7 @@ public class CategoryController {
                                         .collect(Collectors.joining(", "));
 
                         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Validation failed: " + errors));
+                                        .body(ApiResponse.error("Validation failed: " + errors, 400));
                 }
 
                 try {
@@ -235,9 +198,8 @@ public class CategoryController {
                         Optional<AdminCategory> parentCategory = categoryService.getCategoryById(id);
                         if (!parentCategory.isPresent()) {
                                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                                                .body(Map.of(
-                                                                "success", false,
-                                                                "message", "Parent category not found with ID: " + id));
+                                                .body(ApiResponse.error("Parent category not found with ID: " + id,
+                                                                404));
                         }
 
                         // Convert DTO to entity with parent ID
@@ -259,17 +221,13 @@ public class CategoryController {
                         AdminCategory createdSubcategory = categoryService.createCategory(subcategory);
 
                         return ResponseEntity.status(HttpStatus.CREATED)
-                                        .body(Map.of(
-                                                        "success", true,
-                                                        "data", createdSubcategory,
-                                                        "message", "Subcategory created successfully",
-                                                        "parentId", id));
+                                        .body(ApiResponse.success("Subcategory created successfully",
+                                                        createdSubcategory));
                 } catch (Exception e) {
                         log.error("Error creating subcategory for parent: {}", id, e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Failed to create subcategory: " + e.getMessage()));
+                                        .body(ApiResponse.error("Failed to create subcategory: " + e.getMessage(),
+                                                        500));
                 }
         }
 
@@ -277,7 +235,7 @@ public class CategoryController {
          * PUT /admin/categories/:id - Update category details
          */
         @PutMapping("/{id}")
-        public ResponseEntity<Map<String, Object>> updateCategory(
+        public ResponseEntity<ApiResponse<AdminCategory>> updateCategory(
                         @PathVariable String id,
                         @Valid @RequestBody CategoryRequestDto categoryRequest,
                         BindingResult bindingResult) {
@@ -291,9 +249,7 @@ public class CategoryController {
                                         .collect(Collectors.joining(", "));
 
                         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Validation failed: " + errors));
+                                        .body(ApiResponse.error("Validation failed: " + errors, 400));
                 }
 
                 try {
@@ -301,9 +257,7 @@ public class CategoryController {
                         Optional<AdminCategory> existingCategory = categoryService.getCategoryById(id);
                         if (!existingCategory.isPresent()) {
                                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                                                .body(Map.of(
-                                                                "success", false,
-                                                                "message", "Category not found with ID: " + id));
+                                                .body(ApiResponse.error("Category not found with ID: " + id, 404));
                         }
 
                         // Build updated category preserving created fields
@@ -327,22 +281,17 @@ public class CategoryController {
                         Optional<AdminCategory> updatedCategory = categoryService.updateCategory(id, categoryToUpdate);
 
                         if (updatedCategory.isPresent()) {
-                                return ResponseEntity.ok(Map.of(
-                                                "success", true,
-                                                "data", updatedCategory.get(),
-                                                "message", "Category updated successfully"));
+                                return ResponseEntity.ok(
+                                                ApiResponse.success("Category updated successfully",
+                                                                updatedCategory.get()));
                         } else {
                                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                                                .body(Map.of(
-                                                                "success", false,
-                                                                "message", "Category not found with ID: " + id));
+                                                .body(ApiResponse.error("Category not found with ID: " + id, 404));
                         }
                 } catch (Exception e) {
                         log.error("Error updating category: {}", id, e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Failed to update category: " + e.getMessage()));
+                                        .body(ApiResponse.error("Failed to update category: " + e.getMessage(), 500));
                 }
         }
 
@@ -350,7 +299,7 @@ public class CategoryController {
          * DELETE /admin/categories/:id - Soft delete category
          */
         @DeleteMapping("/{id}")
-        public ResponseEntity<Map<String, Object>> deleteCategory(
+        public ResponseEntity<ApiResponse<String>> deleteCategory(
                         @PathVariable String id,
                         @RequestParam(defaultValue = "system") String deletedBy) {
 
@@ -360,23 +309,18 @@ public class CategoryController {
                         boolean deleted = categoryService.softDeleteCategory(id, deletedBy);
 
                         if (deleted) {
-                                return ResponseEntity.ok(Map.of(
-                                                "success", true,
-                                                "message", "Category deleted successfully"));
+                                return ResponseEntity.ok(
+                                                ApiResponse.success("Category deleted successfully"));
                         } else {
                                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                                                .body(Map.of(
-                                                                "success", false,
-                                                                "message",
-                                                                "Category not found or already deleted with ID: "
-                                                                                + id));
+                                                .body(ApiResponse.error(
+                                                                "Category not found or already deleted with ID: " + id,
+                                                                404));
                         }
                 } catch (Exception e) {
                         log.error("Error deleting category: {}", id, e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Failed to delete category: " + e.getMessage()));
+                                        .body(ApiResponse.error("Failed to delete category: " + e.getMessage(), 500));
                 }
         }
 
@@ -384,7 +328,7 @@ public class CategoryController {
          * PUT /admin/categories/:id/restore - Restore a deleted category
          */
         @PutMapping("/{id}/restore")
-        public ResponseEntity<Map<String, Object>> restoreCategory(
+        public ResponseEntity<ApiResponse<String>> restoreCategory(
                         @PathVariable String id,
                         @RequestParam(defaultValue = "system") String restoredBy) {
 
@@ -394,21 +338,16 @@ public class CategoryController {
                         boolean restored = categoryService.restoreCategory(id, restoredBy);
 
                         if (restored) {
-                                return ResponseEntity.ok(Map.of(
-                                                "success", true,
-                                                "message", "Category restored successfully"));
+                                return ResponseEntity.ok(
+                                                ApiResponse.success("Category restored successfully"));
                         } else {
                                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                                                .body(Map.of(
-                                                                "success", false,
-                                                                "message", "Category not found with ID: " + id));
+                                                .body(ApiResponse.error("Category not found with ID: " + id, 404));
                         }
                 } catch (Exception e) {
                         log.error("Error restoring category: {}", id, e);
                         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(Map.of(
-                                                        "success", false,
-                                                        "message", "Failed to restore category: " + e.getMessage()));
+                                        .body(ApiResponse.error("Failed to restore category: " + e.getMessage(), 500));
                 }
         }
 }
