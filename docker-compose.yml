@@ -37,19 +37,6 @@ services:
       - microservices-network
     restart: unless-stopped
 
-  # Admin Service
-  admin-service:
-    image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-admin:latest
-    container_name: admin-service
-    ports:
-      - "8083:8083"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://service-registry:8761/eureka/
-    networks:
-      - microservices-network
-    restart: unless-stopped
-
   # Client Service
   client-service:
     image: public.ecr.aws/k2g9v6r8/spring-microservice/shop-client:latest

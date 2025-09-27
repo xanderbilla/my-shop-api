@@ -9,7 +9,7 @@ AWS_REGION="us-east-1"
 PLATFORMS="linux/amd64,linux/arm64"
 
 # Services and their exact ECR repository names (from your ECR output)
-SERVICES="service-registry:spring-microservice/shop-service-registry api-gateway:spring-microservice/shop-api-gateway auth:spring-microservice/shop-auth admin:spring-microservice/shop-admin client:spring-microservice/shop-client"
+SERVICES="service-registry:spring-microservice/shop-service-registry api-gateway:spring-microservice/shop-api-gateway auth:spring-microservice/shop-auth client:spring-microservice/shop-client"
 
 docker context use default
 

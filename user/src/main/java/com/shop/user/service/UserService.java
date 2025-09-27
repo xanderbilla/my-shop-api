@@ -162,9 +162,7 @@ public class UserService {
         // Check if user is already verified/enabled
         if (Boolean.TRUE.equals(user.getEnabled())) {
             System.out.println("USER_SERVICE: User is already enabled - " + user.getEmail());
-            // Return the user instead of throwing exception - this is a successful
-            // operation
-            return user;
+            throw new RuntimeException("User is already verified");
         }
 
         // Confirm user in Cognito User Pool
@@ -216,6 +214,11 @@ public class UserService {
         User user = getUserById(userId);
         List<UserRole> oldRoles = user.getRoles();
 
+        // Check if roles are already the same
+        if (oldRoles != null && oldRoles.size() == newRoles.size() && oldRoles.containsAll(newRoles)) {
+            throw new RuntimeException("User already has the specified roles");
+        }
+
         // Step 1: Update roles in Cognito groups
         try {
             cognitoService.updateUserRoles(user.getEmail(), oldRoles, newRoles);
@@ -259,6 +262,11 @@ public class UserService {
 
         User user = getUserById(userId);
         CognitoUserStatus oldStatus = user.getUserStatus();
+
+        // Check if status is already the same
+        if (oldStatus == status) {
+            throw new RuntimeException("User already has status: " + status.toString());
+        }
 
         // Update user status in DynamoDB
         user.setUserStatus(status);
@@ -316,6 +324,11 @@ public class UserService {
     public User verifyUserKyc(String userId, String adminId) {
         User user = getUserById(userId);
 
+        // Check if KYC is already verified
+        if (Boolean.TRUE.equals(user.getKycVerified())) {
+            throw new RuntimeException("User KYC is already verified");
+        }
+
         user.setKycVerified(true);
         user.setUpdatedAt(Instant.now());
         user.setUpdatedBy(adminId);
@@ -333,6 +346,11 @@ public class UserService {
      */
     public User updateUserFraudRisk(String userId, FraudRisk risk, String adminId) {
         User user = getUserById(userId);
+
+        // Check if fraud risk is already the same
+        if (user.getFraudRisk() == risk) {
+            throw new RuntimeException("User already has fraud risk level: " + risk.toString());
+        }
 
         user.setFraudRisk(risk);
         user.setUpdatedAt(Instant.now());
@@ -393,7 +411,7 @@ public class UserService {
         User user = getUserById(userId);
 
         if (user.getDeleteStatus() == null || !user.getDeleteStatus().getIsDeleted()) {
-            throw new RuntimeException("User is not deleted");
+            throw new RuntimeException("User is already active (not deleted)");
         }
 
         try {

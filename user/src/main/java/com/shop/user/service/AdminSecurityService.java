@@ -1,6 +1,8 @@
 package com.shop.user.service;
 
 import com.shop.user.model.User;
+import com.shop.user.exception.UserNotAuthenticatedException;
+import com.shop.user.exception.AdminAccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -45,28 +47,30 @@ public class AdminSecurityService {
      * 3. Validates token expiry and issuer
      * 4. Verifies user has ADMIN role in Cognito groups
      * 
-     * @return true if user is authenticated admin, false otherwise
+     * @return true if user is authenticated admin
+     * @throws UserNotAuthenticatedException if user is not authenticated
+     * @throws AdminAccessDeniedException    if user is authenticated but not admin
      */
     public boolean isAdmin() {
         try {
             HttpServletRequest request = getCurrentRequest();
             if (request == null) {
                 System.err.println("SECURITY ALERT: No HTTP request context available");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Step 1: Extract JWT token from cookies
             String accessToken = extractAccessTokenFromCookies(request);
             if (accessToken == null) {
                 System.err.println("SECURITY ALERT: Access denied - No access token found in cookies");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Step 2: Validate token integrity, signature, expiration, and issuer
             if (!jwtTokenService.isValidToken(accessToken)) {
                 System.err.println(
                         "SECURITY ALERT: Access denied - Invalid or expired token (failed JWKS signature verification)");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Step 3: Extract user groups from Cognito token
@@ -79,7 +83,7 @@ public class AdminSecurityService {
                 } catch (Exception e) {
                     System.err.println("SECURITY ALERT: Access denied - No Cognito groups found in token");
                 }
-                return false;
+                throw new AdminAccessDeniedException("Access denied. Only ADMIN users can access this resource.");
             }
 
             // Step 4: Verify ADMIN role specifically
@@ -92,7 +96,7 @@ public class AdminSecurityService {
                     System.err.println("SECURITY ALERT: Access denied - User has groups " + userGroups
                             + " but ADMIN group required");
                 }
-                return false;
+                throw new AdminAccessDeniedException("Access denied. Only ADMIN users can access this resource.");
             }
 
             // Access granted - log successful admin access
@@ -105,9 +109,65 @@ public class AdminSecurityService {
             }
 
             return true;
+        } catch (UserNotAuthenticatedException | AdminAccessDeniedException e) {
+            throw e; // Re-throw our custom exceptions
         } catch (Exception e) {
             System.err.println("SECURITY ERROR: Exception during admin validation: " + e.getMessage());
-            return false;
+            throw new UserNotAuthenticatedException("Please login first to access this resource.");
+        }
+    }
+
+    /**
+     * Enhanced admin security check that throws specific exceptions for better
+     * error messages
+     * 
+     * @throws UserNotAuthenticatedException if user is not authenticated (no token
+     *                                       or invalid token)
+     * @throws AdminAccessDeniedException    if user is authenticated but not admin
+     */
+    public void validateAdminAccessWithExceptions() {
+        try {
+            HttpServletRequest request = getCurrentRequest();
+            if (request == null) {
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
+            }
+
+            // Step 1: Extract JWT token from cookies
+            String accessToken = extractAccessTokenFromCookies(request);
+            if (accessToken == null) {
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
+            }
+
+            // Step 2: Validate token integrity, signature, expiration, and issuer
+            if (!jwtTokenService.isValidToken(accessToken)) {
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
+            }
+
+            // Step 3: Extract user groups from Cognito token
+            List<String> userGroups = jwtTokenService.extractCognitoGroupsFromToken(accessToken);
+            if (userGroups == null || userGroups.isEmpty()) {
+                throw new AdminAccessDeniedException("Access denied. Only ADMIN users can access this resource.");
+            }
+
+            // Step 4: Verify ADMIN role specifically
+            if (!userGroups.contains("ADMIN")) {
+                throw new AdminAccessDeniedException("Access denied. Only ADMIN users can access this resource.");
+            }
+
+            // Access granted - log successful admin access
+            try {
+                String adminUsername = jwtTokenService.extractUsernameFromToken(accessToken);
+                System.out.println("ADMIN ACCESS GRANTED: User '" + adminUsername
+                        + "' authenticated successfully with ADMIN group");
+            } catch (Exception e) {
+                System.out.println("ADMIN ACCESS GRANTED: Admin user authenticated successfully");
+            }
+
+        } catch (UserNotAuthenticatedException | AdminAccessDeniedException e) {
+            throw e; // Re-throw our custom exceptions
+        } catch (Exception e) {
+            System.err.println("SECURITY ERROR: Exception during admin validation: " + e.getMessage());
+            throw new UserNotAuthenticatedException("Please login first to access this resource.");
         }
     }
 

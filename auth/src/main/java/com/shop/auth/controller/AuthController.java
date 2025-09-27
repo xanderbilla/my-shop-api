@@ -37,7 +37,7 @@ public class AuthController {
     }
 
     @PostMapping("/signin")
-    public ResponseEntity<ApiResponse<AuthSuccessResponse>> signin(
+    public ResponseEntity<ApiResponse<String>> signin(
             @Valid @RequestBody SigninRequest request,
             HttpServletResponse response) {
         AuthResponse authResponse = authService.signin(request);
@@ -46,19 +46,15 @@ public class AuthController {
         cookieUtil.setAccessTokenCookie(response, authResponse.getAccessToken());
         cookieUtil.setRefreshTokenCookie(response, authResponse.getRefreshToken());
 
-        // Return success response without tokens
-        AuthSuccessResponse successResponse = AuthSuccessResponse.success(
-                authResponse.getUser(),
-                AuthConstants.SuccessMessages.USER_SIGNED_IN);
-
-        return ResponseUtil.ok(AuthConstants.SuccessMessages.USER_SIGNED_IN, successResponse);
+        // Return success response without user data
+        return ResponseUtil.ok(AuthConstants.SuccessMessages.USER_SIGNED_IN, "LOGIN_SUCCESS");
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<ApiResponse<AuthUser>> verify(@Valid @RequestBody VerifyRequest request) {
+    public ResponseEntity<ApiResponse<String>> verify(@Valid @RequestBody VerifyRequest request) {
         try {
-            AuthUser user = authService.verify(request);
-            return ResponseUtil.ok(AuthConstants.SuccessMessages.EMAIL_VERIFIED, user);
+            authService.verify(request);
+            return ResponseUtil.ok(AuthConstants.SuccessMessages.EMAIL_VERIFIED, "EMAIL_VERIFIED");
         } catch (RuntimeException e) {
             if (e.getMessage().contains("already verified")) {
                 return ResponseEntity.status(400).body(
@@ -199,15 +195,11 @@ public class AuthController {
 
     @GetMapping("/roles")
     @PreAuthorize("@authSecurityService.isAuthenticated()")
-    public ResponseEntity<ApiResponse<GetRoleResponse>> getUserRoles(HttpServletRequest request) {
+    public ResponseEntity<ApiResponse<Object>> getUserRoles(HttpServletRequest request) {
         try {
             // Get token from cookie - @PreAuthorize already validates authentication
             String token = cookieUtil.getAccessTokenFromCookies(request)
                     .orElseThrow(() -> new RuntimeException("Authentication required"));
-
-            // Get user info
-            String cognitoUsername = jwtTokenService.extractCognitoUsernameFromToken(token);
-            AuthUser user = authService.getUserInfo(cognitoUsername);
 
             // Extract cognito:groups from JWT token for current roles
             List<String> cognitoGroups = jwtTokenService.extractCognitoGroupsFromToken(token);
@@ -228,10 +220,12 @@ public class AuthController {
                 roles.add(UserRole.USER);
             }
 
-            GetRoleResponse roleResponse = new GetRoleResponse(user.getUsername(), user.getEmail(), roles);
+            // Create response object with roles key
+            java.util.Map<String, List<UserRole>> responseData = new java.util.HashMap<>();
+            responseData.put("roles", roles);
 
             return ResponseEntity.ok(ApiResponse.success(
-                    "User roles retrieved successfully", roleResponse));
+                    "User roles retrieved successfully", responseData));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Failed to get user roles: " + e.getMessage()));

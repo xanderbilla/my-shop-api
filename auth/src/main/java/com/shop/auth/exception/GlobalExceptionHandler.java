@@ -149,6 +149,47 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
+    /**
+     * Handle custom authentication exceptions (user not logged in)
+     */
+    @ExceptionHandler(UserNotAuthenticatedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleUserNotAuthenticated(UserNotAuthenticatedException ex) {
+        log.warn("Authentication required: {}", ex.getMessage());
+
+        ApiResponse<Object> response = ApiResponse.error(
+                ex.getMessage(),
+                HttpStatus.UNAUTHORIZED.value());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
+    /**
+     * Handle method security exceptions (access denied) - fallback
+     */
+    @ExceptionHandler(org.springframework.security.authorization.AuthorizationDeniedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleAccessDenied(
+            org.springframework.security.authorization.AuthorizationDeniedException ex) {
+        log.warn("Access denied: {}", ex.getMessage());
+
+        ApiResponse<Object> response = ApiResponse.error(
+                "Please login first to access this resource.",
+                HttpStatus.UNAUTHORIZED.value());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
+    /**
+     * Handle authentication exceptions (login required) - fallback
+     */
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ResponseEntity<ApiResponse<Object>> handleAuthenticationRequired(
+            org.springframework.security.core.AuthenticationException ex) {
+        log.warn("Authentication required: {}", ex.getMessage());
+
+        ApiResponse<Object> response = ApiResponse.error(
+                "Please login first to access this resource.",
+                HttpStatus.UNAUTHORIZED.value());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGenericException(Exception ex) {
         log.error("Unexpected error: {}", ex.getMessage(), ex);

@@ -155,9 +155,9 @@ public class AdminUserController {
     public ResponseEntity<ApiResponse<User>> softDeleteUser(@PathVariable String uuid) {
         try {
             String adminId = adminSecurityService.getCurrentAdminId();
-            User user = userService.softDeleteUser(uuid, adminId);
+            userService.softDeleteUser(uuid, adminId);
             return ResponseEntity.ok(
-                    ApiResponse.success("User deleted successfully", user));
+                    ApiResponse.success("User deleted successfully"));
         } catch (RuntimeException e) {
             return ResponseEntity.status(400).body(
                     ApiResponse.error(e.getMessage(), 400));
@@ -180,9 +180,9 @@ public class AdminUserController {
     public ResponseEntity<ApiResponse<User>> restoreUser(@PathVariable String uuid) {
         try {
             String adminId = adminSecurityService.getCurrentAdminId();
-            User user = userService.restoreUser(uuid, adminId);
+            userService.restoreUser(uuid, adminId);
             return ResponseEntity.ok(
-                    ApiResponse.success("User restored successfully", user));
+                    ApiResponse.success("User restored successfully"));
         } catch (RuntimeException e) {
             return ResponseEntity.status(400).body(
                     ApiResponse.error(e.getMessage(), 400));

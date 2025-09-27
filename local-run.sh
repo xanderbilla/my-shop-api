@@ -15,8 +15,8 @@ prompt_stack_name() {
 
 # Function to show helpon
 PROJECT_NAME="spring-microservice"
-SERVICES=("service-registry" "api-gateway" "auth" "admin" "client")
-SERVICE_PORTS=(8761 8080 8082 8083 8084)
+SERVICES=("service-registry" "api-gateway" "auth" "client")
+SERVICE_PORTS=(8761 8080 8082 8084)
 CF_TEMPLATE_PATH="./cloudformation/cognito-infrastructure.yml"
 MAVEN_PID_DIR="/tmp/spring-microservice-$$"
 
@@ -391,7 +391,6 @@ show_status() {
     echo "  Service Registry: http://localhost:8761"
     echo "  API Gateway: http://localhost:8080"
     echo "  Auth Service: http://localhost:8082"
-    echo "  Admin Service: http://localhost:8083"
     echo "  Client Service: http://localhost:8084"
     
     echo ""
@@ -400,7 +399,6 @@ show_status() {
     echo "  Service Registry: http://localhost:8761/actuator/health"
     echo "  API Gateway: http://localhost:8080/api/v1/api-gateway/actuator/health"
     echo "  Auth Service: http://localhost:8080/api/v1/auth/actuator/health"
-    echo "  Admin Service: http://localhost:8080/api/v1/admin/actuator/health"
     echo "  Client Service: http://localhost:8080/api/v1/client/actuator/health"
 }
 
@@ -610,15 +608,14 @@ show_help() {
     echo ""
     echo "Available Services:"
     echo "=================="
-    echo "  service-registry, api-gateway, auth, admin, client"
+    echo "  service-registry, api-gateway, auth, client"
     echo ""
     echo "Service Startup Order:"
     echo "====================="
     echo "  1. service-registry (Port 8761)"
     echo "  2. api-gateway (Port 8080)"
     echo "  3. auth (Port 8082)"
-    echo "  4. admin (Port 8083)"
-    echo "  5. client (Port 8084)"
+    echo "  4. client (Port 8084)"
     echo ""
     echo "Examples:"
     echo "========"

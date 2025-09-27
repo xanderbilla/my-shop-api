@@ -1,5 +1,7 @@
 package com.shop.categories.service;
 
+import com.shop.categories.exception.UserNotAuthenticatedException;
+import com.shop.categories.exception.AdminAccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -49,21 +51,21 @@ public class AdminSecurityService {
             HttpServletRequest request = getCurrentRequest();
             if (request == null) {
                 System.err.println("CATEGORIES SECURITY ALERT: No HTTP request context available");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Step 1: Extract JWT token from cookies
             String accessToken = extractAccessTokenFromCookies(request);
             if (accessToken == null) {
                 System.err.println("CATEGORIES SECURITY ALERT: Access denied - No access token found in cookies");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Step 2: Validate token integrity, signature, expiration, and issuer
             if (!jwtTokenService.isValidToken(accessToken)) {
                 System.err.println(
                         "CATEGORIES SECURITY ALERT: Access denied - Invalid or expired token (failed JWKS signature verification)");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Step 3: Extract user groups from Cognito token
@@ -77,7 +79,7 @@ public class AdminSecurityService {
                 } catch (Exception e) {
                     System.err.println("CATEGORIES SECURITY ALERT: Access denied - No Cognito groups found in token");
                 }
-                return false;
+                throw new AdminAccessDeniedException("Access denied. Only ADMIN users can access this resource.");
             }
 
             // Step 4: Verify ADMIN role specifically
@@ -90,7 +92,7 @@ public class AdminSecurityService {
                     System.err.println("CATEGORIES SECURITY ALERT: Access denied - User has groups " + userGroups
                             + " but ADMIN group required");
                 }
-                return false;
+                throw new AdminAccessDeniedException("Access denied. Only ADMIN users can access this resource.");
             }
 
             // Access granted - log successful admin access
@@ -103,9 +105,12 @@ public class AdminSecurityService {
             }
 
             return true;
+        } catch (UserNotAuthenticatedException | AdminAccessDeniedException e) {
+            // Re-throw security exceptions to be handled by GlobalExceptionHandler
+            throw e;
         } catch (Exception e) {
             System.err.println("CATEGORIES SECURITY ERROR: Exception during admin validation: " + e.getMessage());
-            return false;
+            throw new UserNotAuthenticatedException("Please login first to access this resource.");
         }
     }
 

@@ -1,5 +1,6 @@
 package com.shop.auth.service;
 
+import com.shop.auth.exception.UserNotAuthenticatedException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -49,20 +50,20 @@ public class AuthSecurityService {
             HttpServletRequest request = getCurrentRequest();
             if (request == null) {
                 System.err.println("SECURITY ALERT: No HTTP request context available");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Extract JWT token from cookies
             String accessToken = extractAccessTokenFromCookies(request);
             if (accessToken == null) {
                 System.err.println("SECURITY ALERT: Access denied - No access token found in cookies");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Validate token integrity and expiration
             if (!jwtTokenService.isValidToken(accessToken)) {
                 System.err.println("SECURITY ALERT: Access denied - Invalid or expired token");
-                return false;
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
             }
 
             // Log successful authentication
@@ -74,9 +75,53 @@ public class AuthSecurityService {
             }
 
             return true;
+        } catch (UserNotAuthenticatedException e) {
+            // Re-throw authentication exceptions to be handled by GlobalExceptionHandler
+            throw e;
         } catch (Exception e) {
             System.err.println("SECURITY ERROR: Exception during authentication validation: " + e.getMessage());
-            return false;
+            throw new UserNotAuthenticatedException("Please login first to access this resource.");
+        }
+    }
+
+    /**
+     * Enhanced authentication check that throws specific exception for better error
+     * messages
+     * 
+     * @throws UserNotAuthenticatedException if user is not authenticated (no token
+     *                                       or invalid token)
+     */
+    public void validateAuthenticationWithException() {
+        try {
+            HttpServletRequest request = getCurrentRequest();
+            if (request == null) {
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
+            }
+
+            // Extract JWT token from cookies
+            String accessToken = extractAccessTokenFromCookies(request);
+            if (accessToken == null) {
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
+            }
+
+            // Validate token integrity and expiration
+            if (!jwtTokenService.isValidToken(accessToken)) {
+                throw new UserNotAuthenticatedException("Please login first to access this resource.");
+            }
+
+            // Log successful authentication
+            try {
+                String username = jwtTokenService.extractUsernameFromToken(accessToken);
+                System.out.println("USER AUTHENTICATED: User '" + username + "' validated successfully");
+            } catch (Exception e) {
+                System.out.println("USER AUTHENTICATED: Valid user token verified");
+            }
+
+        } catch (UserNotAuthenticatedException e) {
+            throw e; // Re-throw our custom exception
+        } catch (Exception e) {
+            System.err.println("SECURITY ERROR: Exception during authentication validation: " + e.getMessage());
+            throw new UserNotAuthenticatedException("Please login first to access this resource.");
         }
     }
 
