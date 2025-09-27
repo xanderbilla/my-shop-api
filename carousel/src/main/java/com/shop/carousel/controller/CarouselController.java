@@ -3,15 +3,41 @@ package com.shop.carousel.controller;
 import com.shop.carousel.dto.ApiResponse;
 import com.shop.carousel.model.AdminCarousel;
 import com.shop.carousel.service.CarouselService;
+import com.shop.carousel.service.AdminSecurityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Admin Carousel Controller for Carousel Service
+ * 
+ * 🔒 SECURITY: ALL ENDPOINTS REQUIRE ADMIN AUTHENTICATION via @PreAuthorize
+ * 
+ * Features:
+ * ✅ JWT-based authentication with Cognito
+ * ✅ ADMIN group verification for access control
+ * ✅ Method-level security with @PreAuthorize annotations
+ * ✅ Secure carousel data access from DynamoDB
+ * ✅ Complete CRUD operations for carousel management
+ * ✅ Audit logging with admin user tracking
+ * 
+ * Security Flow:
+ * 1. @PreAuthorize("@adminSecurityService.isAdmin()") - Declarative security
+ * 2. JWT token extraction from access_token cookie
+ * 3. Token signature verification using Cognito JWKS
+ * 4. Token expiry and issuer validation
+ * 5. ADMIN group membership verification
+ * 
+ * @author Vikas Singh
+ * @version 2.0 (Added Authentication)
+ * @since 2025-09-27
+ */
 @RestController
 @RequestMapping("/admin/carousels")
 @RequiredArgsConstructor
@@ -20,13 +46,17 @@ import java.util.Optional;
 public class CarouselController {
 
         private final CarouselService carouselService;
+        private final AdminSecurityService adminSecurityService;
 
         /**
          * GET /admin/carousels - List all carousels
          * GET /admin/carousels?type=homepage - Filter by placement type
          * GET /admin/carousels?status=active - Filter by status
+         * 
+         * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
          */
         @GetMapping
+        @PreAuthorize("@adminSecurityService.isAdmin()")
         public ResponseEntity<ApiResponse<List<AdminCarousel>>> getAllCarousels(
                         @RequestParam(required = false) String type,
                         @RequestParam(required = false) String status) {
@@ -56,8 +86,11 @@ public class CarouselController {
 
         /**
          * GET /admin/carousels/scheduled - List upcoming scheduled carousels
+         * 
+         * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
          */
         @GetMapping("/scheduled")
+        @PreAuthorize("@adminSecurityService.isAdmin()")
         public ResponseEntity<ApiResponse<List<AdminCarousel>>> getScheduledCarousels() {
                 log.info("GET /admin/carousels/scheduled");
 
@@ -77,8 +110,11 @@ public class CarouselController {
 
         /**
          * GET /admin/carousels/:id - Get details of a carousel
+         * 
+         * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
          */
         @GetMapping("/{id}")
+        @PreAuthorize("@adminSecurityService.isAdmin()")
         public ResponseEntity<ApiResponse<AdminCarousel>> getCarouselById(@PathVariable String id) {
                 log.info("GET /admin/carousels/{}", id);
 
@@ -101,8 +137,11 @@ public class CarouselController {
 
         /**
          * POST /admin/carousels - Create a new carousel
+         * 
+         * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
          */
         @PostMapping
+        @PreAuthorize("@adminSecurityService.isAdmin()")
         public ResponseEntity<ApiResponse<AdminCarousel>> createCarousel(@RequestBody AdminCarousel carousel) {
                 log.info("POST /admin/carousels - Creating carousel: {}", carousel.getTitle());
 
@@ -120,8 +159,11 @@ public class CarouselController {
 
         /**
          * PUT /admin/carousels/:id - Update carousel details
+         * 
+         * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
          */
         @PutMapping("/{id}")
+        @PreAuthorize("@adminSecurityService.isAdmin()")
         public ResponseEntity<ApiResponse<AdminCarousel>> updateCarousel(
                         @PathVariable String id,
                         @RequestBody AdminCarousel carousel) {
@@ -148,8 +190,11 @@ public class CarouselController {
 
         /**
          * DELETE /admin/carousels/:id - Soft delete a carousel
+         * 
+         * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
          */
         @DeleteMapping("/{id}")
+        @PreAuthorize("@adminSecurityService.isAdmin()")
         public ResponseEntity<ApiResponse<String>> deleteCarousel(
                         @PathVariable String id,
                         @RequestParam(defaultValue = "system") String deletedBy) {
@@ -175,8 +220,11 @@ public class CarouselController {
 
         /**
          * PUT /admin/carousels/:id/restore - Restore a deleted carousel
+         * 
+         * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
          */
         @PutMapping("/{id}/restore")
+        @PreAuthorize("@adminSecurityService.isAdmin()")
         public ResponseEntity<ApiResponse<String>> restoreCarousel(
                         @PathVariable String id,
                         @RequestParam(defaultValue = "system") String restoredBy) {
@@ -202,8 +250,11 @@ public class CarouselController {
 
         /**
          * PUT /admin/carousels/:id/status - Change status (active/inactive/draft)
+         * 
+         * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
          */
         @PutMapping("/{id}/status")
+        @PreAuthorize("@adminSecurityService.isAdmin()")
         public ResponseEntity<ApiResponse<String>> updateCarouselStatus(
                         @PathVariable String id,
                         @RequestParam String status,
