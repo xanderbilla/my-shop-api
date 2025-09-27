@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.List;
 
 /**
  * AWS Cognito Service for user management operations
@@ -118,6 +119,41 @@ public class CognitoService {
         } catch (Exception e) {
             System.err.println("COGNITO: Failed to update user role - " + e.getMessage());
             throw new RuntimeException("Failed to update user role in Cognito: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Update user's roles by changing group memberships (supports multiple roles)
+     * 
+     * @param username Cognito username
+     * @param oldRoles Current roles (to remove from groups)
+     * @param newRoles New roles (to add to groups)
+     */
+    public void updateUserRoles(String username, List<UserRole> oldRoles, List<UserRole> newRoles) {
+        try {
+            // Remove from old groups that are not in new roles
+            if (oldRoles != null) {
+                for (UserRole oldRole : oldRoles) {
+                    if (newRoles == null || !newRoles.contains(oldRole)) {
+                        removeUserFromGroup(username, oldRole.name());
+                    }
+                }
+            }
+
+            // Add to new groups that are not in old roles
+            if (newRoles != null) {
+                for (UserRole newRole : newRoles) {
+                    if (oldRoles == null || !oldRoles.contains(newRole)) {
+                        addUserToGroup(username, newRole.name());
+                    }
+                }
+            }
+
+            System.out.println("COGNITO: User roles updated - " + username + " from " + oldRoles + " to " + newRoles);
+
+        } catch (Exception e) {
+            System.err.println("COGNITO: Failed to update user roles - " + e.getMessage());
+            throw new RuntimeException("Failed to update user roles in Cognito: " + e.getMessage());
         }
     }
 

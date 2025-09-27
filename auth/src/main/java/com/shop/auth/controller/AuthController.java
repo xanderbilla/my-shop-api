@@ -197,7 +197,7 @@ public class AuthController {
         }
     }
 
-    @GetMapping("/role")
+    @GetMapping("/roles")
     @PreAuthorize("@authSecurityService.isAuthenticated()")
     public ResponseEntity<ApiResponse<GetRoleResponse>> getUserRoles(HttpServletRequest request) {
         try {

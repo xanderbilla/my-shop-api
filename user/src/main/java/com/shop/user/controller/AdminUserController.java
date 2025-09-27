@@ -3,15 +3,17 @@ package com.shop.user.controller;
 import com.shop.user.dto.ApiResponse;
 import com.shop.user.dto.UserCreationRequest;
 import com.shop.user.dto.UserCreationResponse;
+import com.shop.user.dto.UpdateRoleRequest;
+import com.shop.user.dto.UpdateStatusRequest;
+import com.shop.user.dto.UpdateRiskRequest;
 import com.shop.user.model.User;
 import com.shop.user.enums.UserRole;
-import com.shop.user.enums.CognitoUserStatus;
-import com.shop.user.enums.FraudRisk;
 import com.shop.user.service.UserService;
 import com.shop.user.service.AdminSecurityService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 import java.util.List;
 import java.util.Optional;
@@ -231,9 +233,9 @@ public class AdminUserController {
     public ResponseEntity<ApiResponse<User>> verifyUser(@PathVariable String uuid) {
         try {
             String adminId = adminSecurityService.getCurrentAdminId();
-            User user = userService.verifyUser(uuid, adminId);
+            userService.verifyUser(uuid, adminId);
             return ResponseEntity.ok(
-                    ApiResponse.success("User verified successfully", user));
+                    ApiResponse.success("User verified successfully"));
         } catch (RuntimeException e) {
             return ResponseEntity.status(400).body(
                     ApiResponse.error(e.getMessage(), 400));
@@ -244,40 +246,23 @@ public class AdminUserController {
     }
 
     /**
-     * Update user role
+     * Update user roles
      * 
      * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
      * 
      * @param uuid    User ID to update
-     * @param roleStr New role for the user as string
+     * @param request Request body containing list of roles
      * @return ResponseEntity with ApiResponse containing updated user
      */
-    @PutMapping("/users/{uuid}/role")
+    @PutMapping("/users/{uuid}/roles")
     @PreAuthorize("@adminSecurityService.isAdmin()")
-    public ResponseEntity<ApiResponse<User>> updateUserRole(
+    public ResponseEntity<ApiResponse<User>> updateUserRoles(
             @PathVariable String uuid,
-            @RequestParam String role) {
-        try {
-            // Validate role enum
-            UserRole userRole;
-            try {
-                userRole = UserRole.valueOf(role.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                return ResponseEntity.status(400).body(
-                        ApiResponse.error("No such role found. Valid roles are: USER, ADMIN, SUPPORT", 400));
-            }
-
-            String adminId = adminSecurityService.getCurrentAdminId();
-            User user = userService.updateUserRole(uuid, userRole, adminId);
-            return ResponseEntity.ok(
-                    ApiResponse.success("User role updated successfully", user));
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(400).body(
-                    ApiResponse.error(e.getMessage(), 400));
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(
-                    ApiResponse.error("Failed to update user role: " + e.getMessage(), 500));
-        }
+            @RequestBody @Valid UpdateRoleRequest request) {
+        String adminId = adminSecurityService.getCurrentAdminId();
+        userService.updateUserRoles(uuid, request.getRoles(), adminId);
+        return ResponseEntity.ok(
+                ApiResponse.success("User roles updated successfully"));
     }
 
     /**
@@ -293,9 +278,9 @@ public class AdminUserController {
     public ResponseEntity<ApiResponse<User>> verifyUserKyc(@PathVariable String uuid) {
         try {
             String adminId = adminSecurityService.getCurrentAdminId();
-            User user = userService.verifyUserKyc(uuid, adminId);
+            userService.verifyUserKyc(uuid, adminId);
             return ResponseEntity.ok(
-                    ApiResponse.success("User KYC verified successfully", user));
+                    ApiResponse.success("User KYC verified successfully"));
         } catch (RuntimeException e) {
             return ResponseEntity.status(400).body(
                     ApiResponse.error(e.getMessage(), 400));
@@ -310,34 +295,24 @@ public class AdminUserController {
      * 
      * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
      * 
-     * Supported statuses: ACTIVE, INACTIVE, SUSPENDED, BANNED
-     * - ACTIVE: Enables user in Cognito
-     * - INACTIVE, SUSPENDED, BANNED: Disables user in Cognito
+     * Supported statuses: UNCONFIRMED, CONFIRMED, ARCHIVED, COMPROMISED, UNKNOWN,
+     * RESET_REQUIRED, FORCE_CHANGE_PASSWORD
+     * - CONFIRMED: Enables user in Cognito
+     * - Other statuses: Disables user in Cognito
      * 
-     * @param uuid   User ID to update
-     * @param status New account status
+     * @param uuid    User ID to update
+     * @param request Request body containing new status
      * @return ResponseEntity with ApiResponse containing updated user
      */
     @PutMapping("/users/{uuid}/status")
     @PreAuthorize("@adminSecurityService.isAdmin()")
     public ResponseEntity<ApiResponse<User>> updateUserStatus(
             @PathVariable String uuid,
-            @RequestParam CognitoUserStatus status) {
-        try {
-            String adminId = adminSecurityService.getCurrentAdminId();
-            User user = userService.updateUserStatus(uuid, status, adminId);
-            return ResponseEntity.ok(
-                    ApiResponse.success("User status updated successfully", user));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(400).body(
-                    ApiResponse.error("Invalid status. Valid statuses are: ACTIVE, INACTIVE, SUSPENDED, BANNED", 400));
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(400).body(
-                    ApiResponse.error(e.getMessage(), 400));
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(
-                    ApiResponse.error("Failed to update user status: " + e.getMessage(), 500));
-        }
+            @RequestBody @Valid UpdateStatusRequest request) {
+        String adminId = adminSecurityService.getCurrentAdminId();
+        userService.updateUserStatus(uuid, request.getStatus(), adminId);
+        return ResponseEntity.ok(
+                ApiResponse.success("User status updated successfully"));
     }
 
     /**
@@ -353,18 +328,10 @@ public class AdminUserController {
     @PreAuthorize("@adminSecurityService.isAdmin()")
     public ResponseEntity<ApiResponse<User>> updateUserFraudRisk(
             @PathVariable String uuid,
-            @RequestParam FraudRisk risk) {
-        try {
-            String adminId = adminSecurityService.getCurrentAdminId();
-            User user = userService.updateUserFraudRisk(uuid, risk, adminId);
-            return ResponseEntity.ok(
-                    ApiResponse.success("User fraud risk updated successfully", user));
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(400).body(
-                    ApiResponse.error(e.getMessage(), 400));
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(
-                    ApiResponse.error("Failed to update user fraud risk: " + e.getMessage(), 500));
-        }
+            @RequestBody @Valid UpdateRiskRequest request) {
+        String adminId = adminSecurityService.getCurrentAdminId();
+        userService.updateUserFraudRisk(uuid, request.getRisk(), adminId);
+        return ResponseEntity.ok(
+                ApiResponse.success("User fraud risk updated successfully"));
     }
 }

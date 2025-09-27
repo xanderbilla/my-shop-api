@@ -194,7 +194,7 @@ public class UserController {
         }
     }
 
-    @PutMapping("/{uuid}/role")
+    @PutMapping("/{uuid}/roles")
     @PreAuthorize("@adminSecurityService.isAdmin()")
     public ResponseEntity<ApiResponse<User>> updateUserRole(
             @PathVariable String uuid,

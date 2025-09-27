@@ -115,7 +115,7 @@ public class UserService {
                     .username(cognitoUsername) // Use Cognito username
                     .custName(name)
                     .email(email)
-                    .role(role)
+                    .roles(List.of(role)) // Convert single role to list
                     .userStatus(CognitoUserStatus.CONFIRMED) // Default for admin-created users
                     .enabled(true) // Admin-created users are enabled by default
                     .kycVerified(false)
@@ -162,7 +162,9 @@ public class UserService {
         // Check if user is already verified/enabled
         if (Boolean.TRUE.equals(user.getEnabled())) {
             System.out.println("USER_SERVICE: User is already enabled - " + user.getEmail());
-            throw new RuntimeException("User is already enabled");
+            // Return the user instead of throwing exception - this is a successful
+            // operation
+            return user;
         }
 
         // Confirm user in Cognito User Pool
@@ -186,7 +188,7 @@ public class UserService {
     }
 
     /**
-     * Update user role in both DynamoDB and Cognito groups
+     * Update user role in both DynamoDB and Cognito groups (legacy method)
      * 
      * @param userId  User ID to update
      * @param role    New role (will move user to corresponding Cognito group)
@@ -194,25 +196,42 @@ public class UserService {
      * @return Updated user
      */
     public User updateUserRole(String userId, UserRole role, String adminId) {
-        User user = getUserById(userId);
-        UserRole oldRole = user.getRole();
+        return updateUserRoles(userId, List.of(role), adminId);
+    }
 
-        // Step 1: Update role in Cognito groups
-        try {
-            cognitoService.updateUserRole(user.getEmail(), oldRole, role);
-        } catch (Exception e) {
-            System.err.println("USER_SERVICE: Failed to update Cognito role for user " + user.getEmail() + ": "
-                    + e.getMessage());
-            throw new RuntimeException("Failed to update user role in Cognito: " + e.getMessage());
+    /**
+     * Update user roles in both DynamoDB and Cognito groups (supports multiple
+     * roles)
+     * 
+     * @param userId   User ID to update
+     * @param newRoles List of new roles (will update Cognito groups accordingly)
+     * @param adminId  Admin ID performing the action
+     * @return Updated user
+     */
+    public User updateUserRoles(String userId, List<UserRole> newRoles, String adminId) {
+        if (newRoles == null || newRoles.isEmpty()) {
+            throw new IllegalArgumentException("At least one role must be specified");
         }
 
-        // Step 2: Update role in DynamoDB
-        user.setRole(role);
+        User user = getUserById(userId);
+        List<UserRole> oldRoles = user.getRoles();
+
+        // Step 1: Update roles in Cognito groups
+        try {
+            cognitoService.updateUserRoles(user.getEmail(), oldRoles, newRoles);
+        } catch (Exception e) {
+            System.err.println("USER_SERVICE: Failed to update Cognito roles for user " + user.getEmail() + ": "
+                    + e.getMessage());
+            throw new RuntimeException("Failed to update user roles in Cognito: " + e.getMessage());
+        }
+
+        // Step 2: Update roles in DynamoDB
+        user.setRoles(newRoles);
         user.setUpdatedAt(Instant.now());
         user.setUpdatedBy(adminId);
 
-        System.out.println("USER_SERVICE: User role updated successfully - " + user.getUsername() + " from " + oldRole
-                + " to " + role);
+        System.out.println("USER_SERVICE: User roles updated successfully - " + user.getUsername() + " from " + oldRoles
+                + " to " + newRoles);
 
         return userRepository.saveUser(user);
     }

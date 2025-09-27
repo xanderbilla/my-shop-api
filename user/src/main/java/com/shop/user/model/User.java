@@ -33,7 +33,7 @@ public class User {
     private List<Address> addresses;
     private Preferences preferences;
     private AccountStats accountStats;
-    private UserRole role; // USER | ADMIN | SUPPORT
+    private List<UserRole> roles; // USER | ADMIN | SUPPORT - supports multiple roles
     private CognitoUserStatus userStatus; // UNCONFIRMED | CONFIRMED | ARCHIVED | COMPROMISED | UNKNOWN | RESET_REQUIRED
                                           // | FORCE_CHANGE_PASSWORD
     private Boolean kycVerified; // identity verification
@@ -145,5 +145,28 @@ public class User {
                     .restoreAt(null)
                     .build();
         }
+    }
+
+    // Convenience methods for role handling
+
+    /**
+     * Legacy getter for backward compatibility
+     */
+    public UserRole getRole() {
+        return (roles != null && !roles.isEmpty()) ? roles.get(0) : null;
+    }
+
+    /**
+     * Check if user has a specific role
+     */
+    public boolean hasRole(UserRole role) {
+        return roles != null && roles.contains(role);
+    }
+
+    /**
+     * Check if user has admin role
+     */
+    public boolean isAdmin() {
+        return hasRole(UserRole.ADMIN);
     }
 }

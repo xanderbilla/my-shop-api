@@ -348,7 +348,7 @@ public class JwtTokenService {
     }
 
     /**
-     * Check if user has a specific group/role from cognito:groups claim
+     * Check if user has a specific group/roles from cognito:groups claim
      */
     public boolean hasGroup(String token, String groupName) {
         List<String> groups = extractCognitoGroupsFromToken(token);
