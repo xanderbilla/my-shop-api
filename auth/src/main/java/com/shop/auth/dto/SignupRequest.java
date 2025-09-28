@@ -34,6 +34,12 @@ public class SignupRequest {
     @Size(min = 8, message = "Password must be at least 8 characters long")
     private String password;
 
+    // Optional profile picture URL
+    private String profilePicture;
+
+    // Optional phone number
+    private String phone;
+
     // Optional roles, defaults to USER if not provided
     // Can accept single role or comma-separated roles: "USER" or "USER,ADMIN"
     private List<UserRole> roles;

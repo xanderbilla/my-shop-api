@@ -47,6 +47,16 @@ public class AuthService {
             userAttributes.put(AuthConstants.CognitoAttributes.CUSTOM_ROLE, rolesString);
             userAttributes.put(AuthConstants.CognitoAttributes.CUSTOM_USERNAME, request.getUsername());
 
+            // Add profile picture if provided
+            if (request.getProfilePicture() != null && !request.getProfilePicture().trim().isEmpty()) {
+                userAttributes.put("picture", request.getProfilePicture());
+            }
+
+            // Add phone number if provided
+            if (request.getPhone() != null && !request.getPhone().trim().isEmpty()) {
+                userAttributes.put("phone_number", request.getPhone());
+            }
+
             // Calculate secret hash if client secret is provided
             String secretHash = cognitoUtil.calculateSecretHash(request.getEmail());
 
@@ -75,6 +85,8 @@ public class AuthService {
                     request.getUsername(), // Keep the custom username in our system
                     request.getName(),
                     request.getEmail(),
+                    request.getProfilePicture(), // Include profile picture from signup request
+                    request.getPhone(), // Include phone from signup request
                     false, // User needs to verify email
                     request.getRoles() // Use roles list instead of single role
             );
@@ -309,6 +321,8 @@ public class AuthService {
             String preferredUsername = null;
             String roleStr = null;
             String userSub = null; // Cognito UUID
+            String profilePicture = null;
+            String phone = null;
             boolean isVerified = getUserResponse.userStatus() == UserStatusType.CONFIRMED;
 
             for (AttributeType attribute : getUserResponse.userAttributes()) {
@@ -324,6 +338,22 @@ public class AuthService {
                         break;
                     case "preferred_username":
                         preferredUsername = attribute.value();
+                        break;
+                    case "picture":
+                        profilePicture = attribute.value();
+                        break;
+                    case "custom:profilePicture":
+                        if (profilePicture == null) { // Use custom attribute if standard picture is not set
+                            profilePicture = attribute.value();
+                        }
+                        break;
+                    case "phone_number":
+                        phone = attribute.value();
+                        break;
+                    case "custom:phone":
+                        if (phone == null) { // Use custom attribute if standard phone_number is not set
+                            phone = attribute.value();
+                        }
                         break;
                     case "custom:role":
                         roleStr = attribute.value();
@@ -376,6 +406,8 @@ public class AuthService {
                     displayUsername, // Store user-friendly username
                     name,
                     email,
+                    profilePicture, // Include profile picture from Cognito attributes
+                    phone, // Include phone from Cognito attributes
                     isVerified,
                     roles // Use the multiple roles list
             );
@@ -791,12 +823,14 @@ public class AuthService {
      * @return User object with default UNCONFIRMED status
      */
     private AuthUser createUserWithDefaultStatus(String userId, String username, String name,
-            String email, boolean enabled, List<UserRole> roles) {
+            String email, String profilePicture, String phone, boolean enabled, List<UserRole> roles) {
         return AuthUser.builder()
                 .userId(userId)
                 .username(username)
                 .name(name)
                 .email(email)
+                .profilePicture(profilePicture)
+                .phone(phone)
                 .enabled(enabled)
                 .roles(roles)
                 .userStatus(enabled ? CognitoUserStatus.CONFIRMED : CognitoUserStatus.UNCONFIRMED)

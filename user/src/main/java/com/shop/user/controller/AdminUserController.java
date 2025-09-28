@@ -65,9 +65,11 @@ public class AdminUserController {
      * Query parameters:
      * - query: Filter users by full/partial username, custName, email, phone match
      * (default: null)
-     * - userStatus: User status filter - CONFIRMED (default), UNCONFIRMED,
+     * - userStatus: User status filter - CONFIRMED, UNCONFIRMED,
      * ARCHIVED, COMPROMISED, UNKNOWN, RESET_REQUIRED, FORCE_CHANGE_PASSWORD
-     * - role: Filter by assigned role - USER (default), ADMIN, SUPPORT
+     * (default: null - shows all statuses)
+     * - role: Filter by assigned role - USER, ADMIN, SUPPORT
+     * (default: null - shows all roles)
      * - page: Page number (default: 1)
      * - limit: Records per page (default: 10)
      * - sortBy: Field to sort by - createdAt (default), updatedAt, lastLogin
@@ -86,8 +88,8 @@ public class AdminUserController {
     @PreAuthorize("@adminSecurityService.isAdmin()")
     public ResponseEntity<ApiResponse<PaginatedResponse<User>>> getAllUsers(
             @RequestParam(required = false) String query,
-            @RequestParam(required = false, defaultValue = "CONFIRMED") com.shop.user.enums.CognitoUserStatus userStatus,
-            @RequestParam(required = false, defaultValue = "USER") UserRole role,
+            @RequestParam(required = false) com.shop.user.enums.CognitoUserStatus userStatus,
+            @RequestParam(required = false) UserRole role,
             @RequestParam(required = false, defaultValue = "1") Integer page,
             @RequestParam(required = false, defaultValue = "10") Integer limit,
             @RequestParam(required = false, defaultValue = "createdAt") String sortBy,
@@ -222,24 +224,27 @@ public class AdminUserController {
     }
 
     /**
-     * Update user default address
+     * Update user default address by address ID
      * 
      * 🔒 SECURITY: Requires valid JWT token with ADMIN group membership
      * 
-     * @param uuid         User ID to update
-     * @param addressIndex Index of address to make default
+     * @param userId    User ID to update
+     * @param addressId Address ID to make default
      * @return ResponseEntity with ApiResponse containing updated user
      */
-    @PutMapping("/users/{uuid}/address")
+    @PutMapping("/users/{userId}/address/{addressId}")
     @PreAuthorize("@adminSecurityService.isAdmin()")
     public ResponseEntity<ApiResponse<User>> changeDefaultAddress(
-            @PathVariable String uuid,
-            @RequestParam int addressIndex) {
+            @PathVariable String userId,
+            @PathVariable String addressId) {
         try {
             String adminId = adminSecurityService.getCurrentAdminId();
-            User updatedUser = userService.changeDefaultAddress(uuid, addressIndex, adminId);
+            User updatedUser = userService.changeDefaultAddressById(userId, addressId, adminId);
             return ResponseEntity.ok(
                     ApiResponse.success("Default address updated successfully", updatedUser));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(404).body(
+                    ApiResponse.error(e.getMessage(), 404));
         } catch (RuntimeException e) {
             return ResponseEntity.status(400).body(
                     ApiResponse.error(e.getMessage(), 400));

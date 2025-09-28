@@ -16,8 +16,8 @@ public class UserFilterRequest {
 
     // Filter fields
     private String query; // Search by full/partial username, custName, email, phone match
-    private CognitoUserStatus userStatus = CognitoUserStatus.CONFIRMED; // Default CONFIRMED
-    private UserRole role = UserRole.USER; // Default USER
+    private CognitoUserStatus userStatus; // No default - null means show all statuses
+    private UserRole role; // No default - null means show all roles
 
     // Pagination fields
     @Min(value = 1, message = "Page must be greater than 0")
@@ -40,8 +40,8 @@ public class UserFilterRequest {
     public UserFilterRequest(String query, CognitoUserStatus userStatus, UserRole role, Integer page, Integer limit,
             String sortBy, String sortOrder) {
         this.query = query;
-        this.userStatus = userStatus != null ? userStatus : CognitoUserStatus.CONFIRMED;
-        this.role = role != null ? role : UserRole.USER;
+        this.userStatus = userStatus; // Keep null if not provided - shows all statuses
+        this.role = role; // Keep null if not provided - shows all roles
         this.page = page != null ? page : 1;
         this.limit = limit != null ? limit : 10;
         this.sortBy = sortBy != null ? sortBy : "createdAt";
@@ -62,7 +62,7 @@ public class UserFilterRequest {
     }
 
     public void setUserStatus(CognitoUserStatus userStatus) {
-        this.userStatus = userStatus != null ? userStatus : CognitoUserStatus.CONFIRMED;
+        this.userStatus = userStatus; // Keep null if not provided - shows all statuses
     }
 
     public UserRole getRole() {
@@ -70,7 +70,7 @@ public class UserFilterRequest {
     }
 
     public void setRole(UserRole role) {
-        this.role = role != null ? role : UserRole.USER;
+        this.role = role; // Keep null if not provided - shows all roles
     }
 
     public Integer getPage() {

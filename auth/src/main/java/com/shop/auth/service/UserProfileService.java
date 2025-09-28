@@ -31,9 +31,9 @@ public class UserProfileService {
                 .username(user.getUsername())
                 .custName(user.getName())
                 .email(user.getEmail())
-                .phone(null) // Will be updated later by user
+                .phone(user.getPhone()) // Use phone from AuthUser
                 .gender(null) // Will be updated later by user
-                .profilePicture(null)
+                .profilePicture(user.getProfilePicture()) // Use profile picture from AuthUser
                 .enabled(user.isEnabled())
                 .addresses(new ArrayList<>()) // Empty initially
                 .preferences(createDefaultPreferences())

@@ -484,4 +484,53 @@ public class UserService {
 
         return userRepository.saveUser(user);
     }
+
+    /**
+     * Change user default address by address ID
+     * 
+     * @param userId    User ID
+     * @param addressId Address ID to make default
+     * @param adminId   Admin ID making the change
+     * @return Updated user
+     * @throws IllegalArgumentException if address ID not found
+     * @throws RuntimeException if user has no addresses or other validation errors
+     */
+    public User changeDefaultAddressById(String userId, String addressId, String adminId) {
+        User user = getUserById(userId);
+
+        if (user.getAddresses() == null || user.getAddresses().isEmpty()) {
+            throw new RuntimeException("User has no addresses");
+        }
+
+        // Find the address with the given ID
+        User.Address targetAddress = null;
+        for (User.Address address : user.getAddresses()) {
+            if (addressId.equals(address.getId())) {
+                targetAddress = address;
+                break;
+            }
+        }
+
+        // Check if address exists
+        if (targetAddress == null) {
+            throw new IllegalArgumentException("Address not found with ID: " + addressId);
+        }
+
+        // Check if it's already the default address
+        if (Boolean.TRUE.equals(targetAddress.getIsDefault())) {
+            throw new RuntimeException("Already default address");
+        }
+
+        // Reset all addresses to non-default
+        for (User.Address address : user.getAddresses()) {
+            address.setIsDefault(false);
+        }
+
+        // Set the target address as default
+        targetAddress.setIsDefault(true);
+        user.setUpdatedAt(Instant.now());
+        user.setUpdatedBy(adminId);
+
+        return userRepository.saveUser(user);
+    }
 }

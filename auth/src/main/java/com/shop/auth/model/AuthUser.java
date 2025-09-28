@@ -20,6 +20,8 @@ public class AuthUser {
     private String username; // User-friendly username
     private String name;
     private String email;
+    private String profilePicture; // User profile picture URL
+    private String phone; // User phone number
 
     @JsonProperty("enabled")
     private boolean enabled; // Maps to Cognito enabled field
@@ -33,6 +35,8 @@ public class AuthUser {
         this.username = username;
         this.name = name;
         this.email = email;
+        this.profilePicture = null; // Default to null
+        this.phone = null; // Default to null
         this.enabled = enabled;
         this.roles = new ArrayList<>();
         this.roles.add(UserRole.USER);
