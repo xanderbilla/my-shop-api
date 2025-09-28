@@ -24,7 +24,6 @@ import java.util.stream.Collectors;
 @RequestMapping("/admin/categories")
 @RequiredArgsConstructor
 @Slf4j
-@CrossOrigin(origins = "*") // Allow cross-origin for easy testing
 public class CategoryController {
 
         private final CategoryService categoryService;

@@ -10,7 +10,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/carousel")
 @Slf4j
-@CrossOrigin(origins = "*")
 public class HealthController {
 
     /**

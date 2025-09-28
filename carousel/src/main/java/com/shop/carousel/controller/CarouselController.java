@@ -42,7 +42,6 @@ import java.util.Optional;
 @RequestMapping("/admin/carousels")
 @RequiredArgsConstructor
 @Slf4j
-@CrossOrigin(origins = "*") // Allow cross-origin for easy testing
 public class CarouselController {
 
         private final CarouselService carouselService;

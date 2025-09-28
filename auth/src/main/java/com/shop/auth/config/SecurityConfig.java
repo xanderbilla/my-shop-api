@@ -50,17 +50,7 @@ public class SecurityConfig {
                         .requestMatchers("/health").permitAll()
 
                         // All other requests will be handled by @PreAuthorize annotations
-                        .anyRequest().permitAll())
-
-                // Configure CORS
-                .cors(cors -> cors.configurationSource(request -> {
-                    var config = new org.springframework.web.cors.CorsConfiguration();
-                    config.setAllowCredentials(true);
-                    config.addAllowedOriginPattern("*");
-                    config.addAllowedHeader("*");
-                    config.addAllowedMethod("*");
-                    return config;
-                }));
+                        .anyRequest().permitAll());
 
         return http.build();
     }

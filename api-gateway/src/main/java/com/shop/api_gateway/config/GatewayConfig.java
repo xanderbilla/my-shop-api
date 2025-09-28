@@ -24,13 +24,18 @@ public class GatewayConfig {
         public RouteLocator customRouteLocator(RouteLocatorBuilder builder) {
                 return builder.routes()
                                 // Public auth routes (no authentication required)
-                                .route("auth-public", r -> r.path("/auth/signup", "/auth/signin", "/auth/verify",
-                                                "/auth/forgot-password", "/auth/reset-password",
-                                                "/auth/resend-otp", "/auth/refresh-token", "/auth/logout")
+                                // Note: /me, /status, /roles handle their own authentication via @PreAuthorize
+                                .route("auth-public", r -> r.path("/api/v1/auth/signup", "/api/v1/auth/signin",
+                                                "/api/v1/auth/verify",
+                                                "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password",
+                                                "/api/v1/auth/resend-otp", "/api/v1/auth/refresh-token",
+                                                "/api/v1/auth/logout", "/api/v1/auth/me", "/api/v1/auth/status",
+                                                "/api/v1/auth/roles")
                                                 .uri("lb://auth"))
 
-                                // Protected auth routes (authentication required)
-                                .route("auth-protected", r -> r.path("/auth/**")
+                                // Protected auth routes (authentication required) - Note: /me handles its own
+                                // auth
+                                .route("auth-protected", r -> r.path("/api/v1/auth/**")
                                                 .filters(f -> f.filter(authFilter.apply(new AuthFilter.Config())))
                                                 .uri("lb://auth"))
 
@@ -55,7 +60,10 @@ public class GatewayConfig {
         public CorsWebFilter corsWebFilter() {
                 CorsConfiguration corsConfig = new CorsConfiguration();
                 corsConfig.setAllowCredentials(true);
-                corsConfig.addAllowedOriginPattern("*");
+                // Allow specific localhost origins for frontend development
+                corsConfig.setAllowedOrigins(List.of(
+                                "http://localhost:3000",
+                                "http://localhost:3001"));
                 corsConfig.addAllowedHeader("*");
                 corsConfig.addAllowedMethod("*");
 
