@@ -493,7 +493,8 @@ public class UserService {
      * @param adminId   Admin ID making the change
      * @return Updated user
      * @throws IllegalArgumentException if address ID not found
-     * @throws RuntimeException if user has no addresses or other validation errors
+     * @throws RuntimeException         if user has no addresses or other validation
+     *                                  errors
      */
     public User changeDefaultAddressById(String userId, String addressId, String adminId) {
         User user = getUserById(userId);
